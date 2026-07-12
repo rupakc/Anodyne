@@ -15,6 +15,7 @@
 - `ruff` + `mypy --strict` clean; `pytest -m "not integration and not e2e"` green on every commit.
 - Every tenant-scoped table carries `tenant_id` + an RLS policy; the app connects as the non-superuser `anodyne_app` role.
 - Docker-dependent tests marked `integration`; browser tests marked `e2e`. Markers registered in `pyproject.toml`.
+- Test files use **globally-unique basenames** (prefix with the package, e.g. `test_dataset_models.py`, `test_llm_registry.py`) — mypy rejects duplicate module basenames across the monorepo. Do NOT add `__init__.py` to `tests/` dirs. Pytest runs in `--import-mode=importlib` (set in `pyproject.toml`).
 - Generation must be **deterministic given a seed** (same seed+range ⇒ identical rows).
 - Secrets never logged/stored in plaintext. Conventional commits; commit per task.
 - Frontend: use the **autumn-pastel** design system (soft ambers/terracotta/dusty rose/sage/cream); invoke the `frontend-design` skill before building UI.

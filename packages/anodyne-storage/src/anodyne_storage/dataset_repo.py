@@ -31,6 +31,7 @@ def _spec_from_row(m: Any) -> DatasetSpec:
         target_rows=m["target_rows"],
         directives=m["directives"],
         status=m["status"],
+        created_at=m["created_at"],
     )
 
 
@@ -55,6 +56,7 @@ def _version_from_row(m: Any) -> DatasetVersion:
         format=m["format"],
         row_count=m["row_count"],
         checksum=m["checksum"],
+        created_at=m["created_at"],
     )
 
 
@@ -76,6 +78,7 @@ class SqlDatasetRepository(DatasetRepository):
                     target_rows=spec.target_rows,
                     directives=spec.directives,
                     status=spec.status,
+                    created_at=spec.created_at,
                 )
             )
             await s.commit()
@@ -172,6 +175,7 @@ class SqlDatasetRepository(DatasetRepository):
                     format=version.format,
                     row_count=version.row_count,
                     checksum=version.checksum,
+                    created_at=version.created_at,
                 )
             )
             await s.commit()

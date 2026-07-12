@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from sqlalchemy import Column, Float, Integer, MetaData, String, Table, Text, text
+from sqlalchemy import Column, DateTime, Float, Integer, MetaData, String, Table, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.ext.asyncio import (
@@ -70,6 +70,7 @@ datasets = Table(
     Column("target_rows", Integer, nullable=False),
     Column("directives", JSONB, nullable=False, server_default="{}"),
     Column("status", String, nullable=False, server_default="draft"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
 generation_jobs = Table(
@@ -94,6 +95,7 @@ dataset_versions = Table(
     Column("format", String, nullable=False, server_default="parquet"),
     Column("row_count", Integer, nullable=False, server_default="0"),
     Column("checksum", String, nullable=False, server_default=""),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
 # Tenant-scoped tables get an RLS policy keyed on the per-transaction

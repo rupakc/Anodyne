@@ -63,6 +63,7 @@ async def test_spec_crud_is_tenant_isolated(engine) -> None:  # type: ignore[no-
     got = await repo.get_spec(t1, s.id)
     assert got is not None
     assert got.name == "d"
+    assert got.created_at == s.created_at
     assert await repo.get_spec(t2, s.id) is None  # RLS + explicit filter
     assert [x.id for x in await repo.list_specs(t1)] == [s.id]
 

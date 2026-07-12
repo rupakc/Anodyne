@@ -239,6 +239,7 @@ source = { editable = "packages/anodyne-compute" }
 dependencies = [
     { name = "anodyne-dataset" },
     { name = "anodyne-generation" },
+    { name = "anodyne-tabular" },
     { name = "pyarrow" },
     { name = "ray" },
 ]
@@ -247,6 +248,7 @@ dependencies = [
 requires-dist = [
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
     { name = "anodyne-generation", editable = "packages/anodyne-generation" },
+    { name = "anodyne-tabular", editable = "packages/anodyne-tabular" },
     { name = "pyarrow", specifier = ">=17" },
     { name = "ray", specifier = ">=2.35" },
 ]

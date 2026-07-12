@@ -122,9 +122,9 @@ Each sub-system gets its own spec → plan → implementation cycle.
 
 | Order | Sub-system | Requirements |
 |---|---|---|
-| A (now) | Platform Foundation — monorepo, multi-tenant identity + RBAC, gateway, domain models, observability | 11, 14, 15 |
-| B (now) | LLM Abstraction Layer — provider-agnostic interface, cloud + local | 10 |
-| C | Generation Engine — description→schema, templates, from-sample, multimodal | 1, 2, 6 |
+| A ✅ | Platform Foundation — monorepo, multi-tenant identity + RBAC, gateway, domain models, observability | 11, 14, 15 |
+| B ✅ | LLM Abstraction Layer — provider-agnostic interface, cloud + local | 10 |
+| C (now) | Generation Engine — description→schema, templates, from-sample, all five modalities; Temporal + Ray introduced here; Web UI begins | 1, 2, 4, 6 |
 | D | Perturbation Module — noise, drift, outliers, bias/edge-case | 3, 4 |
 | E | Export & Storage — formats + size-based defaults | 5 |
 | F | Evaluation Engine — LLM-as-a-Judge MoE, reports | 7, 8, 9 |

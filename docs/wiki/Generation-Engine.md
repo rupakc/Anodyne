@@ -28,19 +28,24 @@ same rows — which is important for testing and comparisons.
 - The **web app** is a friendly, autumn-themed interface for the whole flow.
 - Everything is **per-company and secure** — see [Multi-Tenancy & Security](Multi-Tenancy-and-Security).
 
-## What's coming next
+## All five modalities are now available
 
-The foundation is deliberately a thin, working slice. Planned additions:
+Beyond the tabular-from-description flow above, Anodyne now generates every modality:
 
-- **C1 — Tabular from a sample.** Upload an existing table; Anodyne learns its patterns and generates
-  realistic new rows that match.
-- **C2 — Text datasets.** Generate text corpora (e.g. for classification, Q&A, chat).
-- **C3–C5 — Images, audio, video.** Generate these using open models on your own GPUs or external
-  providers.
-- **C6 — Templates & targeted cases.** Starter templates plus the ability to deliberately create
-  biases, rare edge-cases, and specific scenarios for testing.
+- **Tabular from a sample.** Upload an existing table; Anodyne learns its patterns (distributions,
+  correlations) and generates realistic new rows that match — using privacy-safe statistical models
+  (with a high-fidelity option). Personal-looking fields (names, emails) are always faked, never
+  copied from your sample.
+- **Text datasets.** Generate text corpora for classification, Q&A, summarization, and chat — with
+  automatic de-duplication and quality filtering.
+- **Images, audio, and video.** Generate these through your choice of provider — open models on your
+  own GPUs, or external services — using per-company API keys (kept encrypted).
+- **Starter templates & targeted cases.** Pick a ready-made template (customers, transactions,
+  support tickets, sensor readings, users-with-churn) and customize it, and deliberately steer the
+  data toward specific biases, rare edge-cases, or use-cases for testing.
 
 ## Status
 
-✅ **C0 (foundation) done.** C1–C6 are in progress, built as independent, plug-in modalities on this
-foundation.
+✅ **Generation Engine complete (C0–C6).** All five modalities plus templates and targeted-case
+steering are built, behind one consistent interface. Live image/audio/video generation requires a
+GPU or an external provider key; the rest runs on an ordinary machine (offline for tabular/text).

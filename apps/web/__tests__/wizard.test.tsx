@@ -48,6 +48,7 @@ const GENERATED_JOB: GenerationJob = {
 function makeMockApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     createDataset: vi.fn().mockResolvedValue(PROPOSED_SPEC),
+    listDatasets: vi.fn(),
     getDataset: vi.fn(),
     updateDataset: vi.fn().mockImplementation(async (id: string, patch) => ({
       ...PROPOSED_SPEC,
@@ -56,6 +57,7 @@ function makeMockApi(overrides: Partial<ApiClient> = {}): ApiClient {
     generate: vi.fn().mockResolvedValue(GENERATED_JOB),
     getJob: vi.fn(),
     listVersions: vi.fn(),
+    downloadUrl: vi.fn(),
     ...overrides,
   };
 }

@@ -97,6 +97,21 @@ export interface GenerateOptions {
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
+/**
+ * Base URL for the live job-progress socket (`WS /jobs/{id}/stream`). Reads
+ * `NEXT_PUBLIC_WS_BASE` (public, non-secret — see docs/dev-runbook.md) and
+ * otherwise derives it from {@link API_BASE} by swapping the `http(s)`
+ * scheme for `ws(s)`, so a single env var change (`NEXT_PUBLIC_API_BASE`)
+ * still works out of the box in the common case of gateway and socket
+ * sharing a host.
+ */
+export const WS_BASE = process.env.NEXT_PUBLIC_WS_BASE ?? API_BASE.replace(/^http/, "ws");
+
+/** Builds the `WS /jobs/{id}/stream` URL for {@link WS_BASE}. */
+export function jobStreamUrl(jobId: string, baseUrl: string = WS_BASE): string {
+  return `${baseUrl}/jobs/${jobId}/stream`;
+}
+
 /** Thrown for any non-2xx gateway response; carries the HTTP status for callers that care. */
 export class ApiError extends Error {
   status: number;
@@ -110,11 +125,14 @@ export class ApiError extends Error {
 
 export interface ApiClient {
   createDataset(input: CreateDatasetInput): Promise<DatasetSpec>;
+  listDatasets(): Promise<DatasetSpec[]>;
   getDataset(id: string): Promise<DatasetSpec>;
   updateDataset(id: string, patch: UpdateDatasetInput): Promise<DatasetSpec>;
   generate(id: string, opts?: GenerateOptions): Promise<GenerationJob>;
   getJob(id: string): Promise<GenerationJob>;
   listVersions(id: string): Promise<DatasetVersion[]>;
+  /** Resolves to a presigned, time-limited download URL for one version's artifact. */
+  downloadUrl(datasetId: string, versionId: string): Promise<string>;
 }
 
 /**
@@ -148,6 +166,7 @@ export function createApiClient(accessToken: string | undefined, baseUrl: string
   return {
     createDataset: (input) =>
       request<DatasetSpec>("/datasets", { method: "POST", body: JSON.stringify(input) }),
+    listDatasets: () => request<DatasetSpec[]>("/datasets"),
     getDataset: (id) => request<DatasetSpec>(`/datasets/${id}`),
     updateDataset: (id, patch) =>
       request<DatasetSpec>(`/datasets/${id}`, { method: "PATCH", body: JSON.stringify(patch) }),
@@ -158,5 +177,9 @@ export function createApiClient(accessToken: string | undefined, baseUrl: string
       }),
     getJob: (id) => request<GenerationJob>(`/jobs/${id}`),
     listVersions: (id) => request<DatasetVersion[]>(`/datasets/${id}/versions`),
+    downloadUrl: (datasetId, versionId) =>
+      request<{ url: string }>(`/datasets/${datasetId}/versions/${versionId}/download`).then(
+        (r) => r.url,
+      ),
   };
 }

@@ -103,6 +103,7 @@ KEYCLOAK_ISSUER=http://localhost:8080/realms/anodyne     # default if unset
 KEYCLOAK_CLIENT_ID=anodyne                                # default if unset
 KEYCLOAK_CLIENT_SECRET=dev-only-anodyne-client-secret     # from infra/docker/keycloak/anodyne-realm.json, dev-only
 NEXT_PUBLIC_API_BASE=http://localhost:8000                # default if unset; the api-gateway base URL
+NEXT_PUBLIC_WS_BASE=ws://localhost:8000                   # default if unset; derived from NEXT_PUBLIC_API_BASE otherwise
 ```
 
 `AUTH_SECRET` and `KEYCLOAK_CLIENT_SECRET` are required — without them,
@@ -114,7 +115,20 @@ point at a different Keycloak instance. `NEXT_PUBLIC_API_BASE` (read by
 ever needs overriding if the gateway isn't reachable at the default
 `http://localhost:8000` (e.g. a different port or a deployed environment);
 the create-from-description wizard (`app/app/new`) uses it to call
-`POST /datasets`, `PATCH /datasets/{id}`, and `POST /datasets/{id}/generate`.
+`POST /datasets`, `PATCH /datasets/{id}`, and `POST /datasets/{id}/generate`;
+the dataset browser (`app/app/datasets`) and job progress page
+(`app/app/jobs/{id}`) use it for `GET /datasets`, `GET /jobs/{id}`, `GET
+/datasets/{id}/versions`, and the presigned download route.
+`NEXT_PUBLIC_WS_BASE` (also public, non-secret) is the base URL the job
+progress page opens `WS /jobs/{id}/stream` against; unset, it's derived from
+`NEXT_PUBLIC_API_BASE` by swapping `http(s)` for `ws(s)`, which is correct
+whenever the gateway and its WebSocket route share a host — only override it
+if they're split across different hosts/ports. Note the gateway's WS route
+requires the same `Authorization: Bearer` header as its HTTP routes, but
+browsers cannot attach custom headers to a WebSocket handshake; in practice
+the socket will reject with 401 and the progress page falls back to polling
+`GET /jobs/{id}` (which does carry the header via `fetch`) — see
+`apps/web/lib/use-job-progress.ts`.
 
 If you only need the gateway (e.g. for the `curl` walkthrough below),
 running the first command by itself is enough.

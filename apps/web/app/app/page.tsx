@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { auth, signOut } from "@/auth";
 import { Button } from "@/components/ui/button";
 
@@ -24,6 +25,20 @@ export default async function AppHome() {
         client reads <code className="font-[family-name:var(--font-data)]">session.accessToken</code>{" "}
         from here to call <code className="font-[family-name:var(--font-data)]">/llm/invoke</code> and friends.
       </p>
+      <div className="flex flex-wrap items-center justify-center gap-3">
+        <Link
+          href="/app/new"
+          className="rounded-lg bg-terracotta px-4 py-2 text-sm font-medium text-terracotta-foreground transition-colors hover:bg-terracotta/85"
+        >
+          Create a dataset
+        </Link>
+        <Link
+          href="/app/datasets"
+          className="rounded-lg border border-border bg-background px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
+        >
+          Browse datasets
+        </Link>
+      </div>
       <form action={logout}>
         <Button type="submit" variant="outline">
           Sign out

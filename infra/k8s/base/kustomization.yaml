@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Base is deploy-target-agnostic (no env-specific hostnames/replicas/image
+# tags) — overlays/{dev,prod} patch those in. raycluster.yaml is
+# deliberately excluded; see the comment at its top.
+namespace: anodyne
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml
+  - api-gateway.yaml
+  - generation-worker.yaml
+  - web.yaml
+
+labels:
+  - includeSelectors: false
+    pairs:
+      app.kubernetes.io/part-of: anodyne
+      app.kubernetes.io/managed-by: kustomize
+
+images:
+  - name: api-gateway
+    newName: api-gateway
+    newTag: latest
+  - name: generation-worker
+    newName: generation-worker
+    newTag: latest
+  - name: web
+    newName: web
+    newTag: latest

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import AsyncIterator
+from typing import IO
 
 from anodyne_core.models import LLMRequest, LLMResponse, ModelConfig, TenantContext
 
@@ -9,6 +10,17 @@ from anodyne_core.models import LLMRequest, LLMResponse, ModelConfig, TenantCont
 class ObjectStore(ABC):
     @abstractmethod
     async def put(self, key: str, data: bytes) -> None: ...
+
+    async def put_fileobj(self, key: str, fileobj: IO[bytes]) -> None:
+        """Upload from a binary file object rather than an in-memory `bytes`.
+
+        Concrete (non-abstract) default so existing implementations keep working
+        unchanged: it reads the whole object and delegates to `put`. Streaming
+        stores (e.g. `S3ObjectStore`) override this to upload directly from the
+        handle, so a caller that has spilled a large payload to a temp file never
+        has to materialize it in memory.
+        """
+        await self.put(key, fileobj.read())
 
     @abstractmethod
     async def get(self, key: str) -> bytes: ...

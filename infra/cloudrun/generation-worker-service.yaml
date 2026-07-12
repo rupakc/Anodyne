@@ -1,0 +1,83 @@
+# Cloud Run v2 Service running generation-worker as a *no-ingress* background
+# worker (Temporal task-queue polling, not request-driven). Cloud Run (not
+# Cloud Run Jobs) is used because the worker must stay resident/subscribed to
+# the "generation" task queue indefinitely — a Job is for run-to-completion
+# batch work. `minScale: 1` + `run.googleapis.com/ingress: internal` gives an
+# always-on, unreachable-from-the-internet instance; `cpu-throttling: false`
+# (via `run.googleapis.com/cpu-throttling`) keeps CPU allocated between
+# requests, since this container never *serves* HTTP requests at all — see
+# docs/deployment.md "Cloud Run" section for when GKE is the better fit
+# (image/audio/video modalities wanting a real Ray cluster + GPUs; this
+# Cloud Run shape suits tabular/text-only, lighter-weight deployments).
+#
+#   gcloud run services replace infra/cloudrun/generation-worker-service.yaml \
+#     --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}"
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: anodyne-generation-worker
+  labels:
+    app: anodyne
+    component: generation-worker
+  annotations:
+    run.googleapis.com/ingress: internal
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "5"
+        run.googleapis.com/cloudsql-instances: "${GCP_PROJECT_ID}:${GCP_REGION}:${CLOUD_SQL_INSTANCE}"
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      serviceAccountName: "${WORKER_RUNTIME_SA_EMAIL}"
+      containerConcurrency: 1
+      timeoutSeconds: 3600
+      containers:
+        - image: "${GAR_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/generation-worker:${IMAGE_TAG}"
+          resources:
+            limits:
+              cpu: "4"
+              memory: 4Gi
+          env:
+            - name: ANODYNE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: anodyne-database-url
+                  key: latest
+            - name: ANODYNE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: anodyne-secret-key
+                  key: latest
+            - name: ANODYNE_S3_BUCKET
+              value: "${GCS_BUCKET}"
+            - name: ANODYNE_TEMPORAL_ADDRESS
+              value: "${TEMPORAL_ADDRESS}"
+            - name: ANODYNE_REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: anodyne-redis-url
+                  key: latest
+            # No ray-head on Cloud Run: fall back to an embedded local Ray
+            # instance in-process (see anodyne_compute.ray_init) by leaving
+            # this empty. Point at a GKE-hosted Ray cluster's client
+            # endpoint instead if one is available to this project/VPC.
+            - name: ANODYNE_RAY_ADDRESS
+              value: "${RAY_ADDRESS}"
+            - name: AWS_ENDPOINT_URL_S3
+              value: "https://storage.googleapis.com"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: anodyne-gcs-hmac-access-key
+                  key: latest
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: anodyne-gcs-hmac-secret
+                  key: latest
+  traffic:
+    - percent: 100
+      latestRevision: true

@@ -19,13 +19,38 @@
 -include .env
 export
 
-.PHONY: up down migrate seed test dev
+.PHONY: up down migrate seed test dev \
+        docker-build docker-build-gateway docker-build-worker docker-build-web \
+        compose-prod-up compose-prod-down k8s-render-dev k8s-render-prod
 
 up:        ; docker compose -f infra/docker/docker-compose.yml up -d
 down:      ; docker compose -f infra/docker/docker-compose.yml down -v
 migrate:   ; uv run alembic -c packages/anodyne-storage/alembic.ini upgrade head
 seed:      ; uv run python -m api_gateway.seed
 test:      ; uv run pytest
+
+# --- Deployment (sub-system I — see docs/deployment.md) --------------------
+#
+# All three images build from the repo root as Docker context (the uv
+# workspace needs every path-dependency resolvable on disk even for a
+# single-app `--package` sync) — see apps/*/Dockerfile.
+docker-build-gateway: ; docker build -f apps/api-gateway/Dockerfile -t anodyne/api-gateway:local .
+docker-build-worker:  ; docker build -f apps/generation-worker/Dockerfile -t anodyne/generation-worker:local .
+docker-build-web:     ; docker build -f apps/web/Dockerfile -t anodyne/web:local .
+docker-build: docker-build-gateway docker-build-worker docker-build-web
+
+# On-prem "production" profile: the dev backbone (infra/docker/docker-compose.yml)
+# plus infra/docker/docker-compose.prod.yml's built-image/restart-policy/
+# resource-limit overlay. See docs/deployment.md "On-prem" section.
+compose-prod-up:   ; docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.prod.yml up -d --build
+compose-prod-down: ; docker compose -f infra/docker/docker-compose.yml -f infra/docker/docker-compose.prod.yml down -v
+
+# Render (don't apply) the GKE Kustomize overlays — a quick way to sanity-check
+# infra/k8s/ edits without a live cluster. `${VAR}` placeholders in
+# `images[].newName` are intentionally left un-substituted here; real
+# deployment pipes this through `envsubst` first (see docs/deployment.md).
+k8s-render-dev:  ; kubectl kustomize infra/k8s/overlays/dev
+k8s-render-prod: ; kubectl kustomize infra/k8s/overlays/prod
 
 # Runs the three host-side dev processes concurrently: the api-gateway
 # (uvicorn, reload on), the generation-worker (Temporal worker process), and

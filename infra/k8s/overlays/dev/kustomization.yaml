@@ -1,0 +1,37 @@
+# NOTE on `images[].newName`: the `${GAR_LOCATION}`/`${GCP_PROJECT_ID}`/
+# `${GAR_REPOSITORY}` placeholders are literal in this file — `kustomize
+# build` does not do shell substitution. CI/CD pipes the rendered manifest
+# through `envsubst` before `kubectl apply` (see docs/deployment.md "GKE"
+# section), the same pattern used by infra/cloudrun/*.yaml. `kustomize
+# build overlays/dev` still succeeds and produces valid (if literal-
+# placeholder) YAML, which is enough to validate structure in CI.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namePrefix: dev-
+namespace: anodyne-dev
+
+resources:
+  - ../../base
+
+patches:
+  - path: replicas-and-resources.yaml
+
+configMapGenerator:
+  - name: anodyne-config
+    behavior: merge
+    literals:
+      - ANODYNE_TEMPORAL_ADDRESS=temporal-frontend.anodyne-dev.svc.cluster.local:7233
+      - ANODYNE_RAY_ADDRESS=ray://anodyne-ray-head-svc.anodyne-dev.svc.cluster.local:10001
+      - NEXT_PUBLIC_API_BASE=https://api-dev.anodyne.example.com
+
+images:
+  - name: api-gateway
+    newName: "${GAR_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/api-gateway"
+    newTag: dev
+  - name: generation-worker
+    newName: "${GAR_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/generation-worker"
+    newTag: dev
+  - name: web
+    newName: "${GAR_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/web"
+    newTag: dev

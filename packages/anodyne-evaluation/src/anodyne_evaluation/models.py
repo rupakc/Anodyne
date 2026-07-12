@@ -1,0 +1,105 @@
+"""Evaluation domain models.
+
+A `Judge` (an expert) produces an `ExpertScore` for one `EvalDimension`; the
+`Aggregator` combines the experts' verdicts into a weighted 360-degree
+`EvaluationReport`. `EvaluationRun` is the persisted lifecycle record (status,
+progress, artifact locations), mirroring `GenerationJob` for the generation
+side. All scores are normalized to ``0..1`` where **higher is better**, so a
+single weighted mean across dimensions is meaningful.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from enum import StrEnum
+from uuid import UUID
+
+from pydantic import BaseModel, Field
+
+
+class EvalDimension(StrEnum):
+    """The mixture-of-experts dimensions (one expert judge each)."""
+
+    FIDELITY = "fidelity"
+    DIVERSITY = "diversity"
+    PRIVACY = "privacy"
+    UTILITY = "utility"
+    BIAS = "bias"
+    QUALITATIVE = "qualitative"
+
+
+# Default 360-degree weights (sum == 1.0). Overridable per run via
+# `EvaluationConfig.weights`; the aggregator renormalizes over whichever
+# dimensions actually produced a score.
+DEFAULT_WEIGHTS: dict[str, float] = {
+    EvalDimension.FIDELITY: 0.25,
+    EvalDimension.PRIVACY: 0.20,
+    EvalDimension.UTILITY: 0.20,
+    EvalDimension.DIVERSITY: 0.15,
+    EvalDimension.QUALITATIVE: 0.10,
+    EvalDimension.BIAS: 0.10,
+}
+
+
+class ExpertScore(BaseModel):
+    """One expert judge's verdict for a single dimension."""
+
+    dimension: EvalDimension
+    score: float  # normalized 0..1, higher is better
+    rationale: str
+    metrics: dict[str, float] = Field(default_factory=dict)  # raw underlying numbers
+    recommendations: list[str] = Field(default_factory=list)
+
+
+class EvaluationConfig(BaseModel):
+    """Per-run knobs. Carried verbatim onto the workflow input + persisted on the run."""
+
+    weights: dict[str, float] = Field(default_factory=dict)  # dimension -> weight overrides
+    sensitive_field: str | None = None  # enables BiasJudge
+    target_field: str | None = None  # enables UtilityJudge (TSTR) + bias outcome disparity
+    text_column: str | None = None  # column sampled for the qualitative LLM judge (tabular/text)
+    model_config_id: UUID | None = None  # which registered LLM drives the qualitative judge
+    sample_rows: int = 20  # rows sampled for the qualitative rubric prompt
+    seed: int = 0
+
+
+class EvaluationReport(BaseModel):
+    """The weighted 360-degree report: per-expert breakdown + overall + recommendations."""
+
+    id: UUID
+    tenant_id: UUID
+    dataset_id: UUID
+    dataset_version_id: UUID
+    reference_version_id: UUID | None = None
+    overall_score: float
+    expert_scores: list[ExpertScore]
+    weights: dict[str, float]  # the (renormalized) weights actually applied
+    recommendations: list[str] = Field(default_factory=list)
+    summary: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class EvaluationStatus(StrEnum):
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class EvaluationRun(BaseModel):
+    """Persisted lifecycle record for one evaluation (mirrors `GenerationJob`)."""
+
+    id: UUID
+    tenant_id: UUID
+    dataset_id: UUID
+    dataset_version_id: UUID
+    reference_version_id: UUID | None = None
+    status: EvaluationStatus = EvaluationStatus.PENDING
+    progress: float = 0.0
+    message: str = ""
+    workflow_id: str | None = None
+    report_uri: str | None = None  # object-store key of the JSON report
+    report_html_uri: str | None = None  # object-store key of the HTML report
+    overall_score: float | None = None
+    config: dict[str, object] = Field(default_factory=dict)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

@@ -40,6 +40,9 @@ from temporalio.client import Client
 
 from api_gateway import deps
 from api_gateway.deps import ModelRegistry, RedisLike
+from api_gateway.evaluation_routes import build_router as build_evaluation_router
+from api_gateway.export_routes import router as export_router
+from api_gateway.perturbation_routes import router as perturbation_router
 
 # Sample uploads are capped well below typical request-body limits so a single
 # tenant can't exhaust gateway memory profiling an enormous file synchronously.
@@ -143,6 +146,8 @@ class RegisterVideoProviderRequest(BaseModel):
 def create_app() -> FastAPI:
     configure_logging()
     app = FastAPI(title="Anodyne API Gateway")
+    app.include_router(export_router)
+    app.include_router(perturbation_router)
 
     @app.middleware("http")
     async def request_context_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
@@ -701,5 +706,8 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "version not found")
         url = await object_store.presigned_url(version.artifact_uri)
         return {"url": url}
+
+    # Evaluation Engine (sub-system F) routes live in a focused module.
+    app.include_router(build_evaluation_router())
 
     return app

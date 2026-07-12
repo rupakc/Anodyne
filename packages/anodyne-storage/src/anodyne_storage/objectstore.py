@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import IO, Any
 from uuid import UUID
 
 from anodyne_core.ports import ObjectStore
@@ -22,6 +22,11 @@ class S3ObjectStore(ObjectStore):
         await asyncio.to_thread(
             self._c.put_object, Bucket=self._bucket, Key=self._key(key), Body=data
         )
+
+    async def put_fileobj(self, key: str, fileobj: IO[bytes]) -> None:
+        # `upload_fileobj` streams the handle to S3/MinIO in parts, so the payload
+        # never has to be held in memory as a single `bytes` object.
+        await asyncio.to_thread(self._c.upload_fileobj, fileobj, self._bucket, self._key(key))
 
     async def get(self, key: str) -> bytes:
         obj = await asyncio.to_thread(self._c.get_object, Bucket=self._bucket, Key=self._key(key))

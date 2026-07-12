@@ -1,0 +1,88 @@
+# generation-worker: Temporal worker dispatching Ray generation activities
+# (`python -m generation_worker.main`). No Service/Ingress — it's a
+# task-queue consumer (Temporal "generation" queue), not request-driven.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: generation-worker
+  labels:
+    app.kubernetes.io/name: generation-worker
+    app.kubernetes.io/part-of: anodyne
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: generation-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: generation-worker
+        app.kubernetes.io/part-of: anodyne
+    spec:
+      serviceAccountName: anodyne-generation-worker
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: generation-worker
+          image: generation-worker:latest # replaced per-overlay (see kustomization.yaml images:)
+          envFrom:
+            - configMapRef:
+                name: anodyne-config
+            - secretRef:
+                name: anodyne-secrets
+          env:
+            - name: HOME
+              value: /tmp
+            - name: TMPDIR
+              value: /tmp
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          # No HTTP surface to probe; a live Temporal `Worker.run()` loop
+          # keeps the process alive, so liveness is "process still running"
+          # (Kubernetes' default without an explicit probe). A real
+          # liveness/readiness signal would need a small sidecar or
+          # `exec` probe checking the worker's Temporal heartbeat — left
+          # as a documented follow-up in docs/deployment.md rather than
+          # invented app-source behavior here.
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: anodyne-generation-worker
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: generation-worker
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: generation-worker
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 75

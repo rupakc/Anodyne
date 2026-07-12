@@ -16,9 +16,16 @@ from anodyne_dataset.models import (
     DatasetVersion,
     FieldSpec,
     GenerationJob,
+    PerturbationFamily,
+    PerturbationJob,
+    PerturbationSpec,
     Profile,
 )
-from anodyne_dataset.ports import DatasetRepository, ProfileRepository
+from anodyne_dataset.ports import (
+    DatasetRepository,
+    PerturbationRepository,
+    ProfileRepository,
+)
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -28,6 +35,7 @@ from anodyne_storage.db import (
     dataset_versions,
     datasets,
     generation_jobs,
+    perturbation_jobs,
     tenant_session,
 )
 
@@ -69,6 +77,29 @@ def _version_from_row(m: Any) -> DatasetVersion:
         format=m["format"],
         row_count=m["row_count"],
         checksum=m["checksum"],
+        parent_version_id=m["parent_version_id"],
+        created_at=m["created_at"],
+    )
+
+
+def _perturbation_job_from_row(m: Any) -> PerturbationJob:
+    return PerturbationJob(
+        id=m["id"],
+        tenant_id=m["tenant_id"],
+        dataset_id=m["dataset_id"],
+        parent_version_id=m["parent_version_id"],
+        spec=PerturbationSpec(
+            family=PerturbationFamily(m["family"]),
+            intensity=m["intensity"],
+            target_fields=m["target_fields"],
+            params=m["params"],
+            seed=m["seed"],
+        ),
+        status=m["status"],
+        progress=m["progress"],
+        message=m["message"],
+        workflow_id=m["workflow_id"],
+        result_version_id=m["result_version_id"],
         created_at=m["created_at"],
     )
 
@@ -87,7 +118,7 @@ def _profile_from_row(m: Any) -> Profile:
     )
 
 
-class SqlDatasetRepository(DatasetRepository, ProfileRepository):
+class SqlDatasetRepository(DatasetRepository, ProfileRepository, PerturbationRepository):
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
@@ -202,6 +233,7 @@ class SqlDatasetRepository(DatasetRepository, ProfileRepository):
                     format=version.format,
                     row_count=version.row_count,
                     checksum=version.checksum,
+                    parent_version_id=version.parent_version_id,
                     created_at=version.created_at,
                 )
             )
@@ -259,3 +291,64 @@ class SqlDatasetRepository(DatasetRepository, ProfileRepository):
                 .first()
             )
             return _profile_from_row(row) if row else None
+
+    async def save_perturbation_job(self, job: PerturbationJob) -> None:
+        async with tenant_session(self._engine, job.tenant_id) as s:
+            values = {
+                "id": job.id,
+                "tenant_id": job.tenant_id,
+                "dataset_id": job.dataset_id,
+                "parent_version_id": job.parent_version_id,
+                "family": str(job.spec.family),
+                "params": job.spec.params,
+                "intensity": job.spec.intensity,
+                "target_fields": job.spec.target_fields,
+                "seed": job.spec.seed,
+                "status": str(job.status),
+                "progress": job.progress,
+                "message": job.message,
+                "workflow_id": job.workflow_id,
+                "result_version_id": job.result_version_id,
+                "created_at": job.created_at,
+            }
+            stmt = pg_insert(perturbation_jobs).values(**values)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[perturbation_jobs.c.id],
+                set_={k: v for k, v in values.items() if k not in ("id", "created_at")},
+            )
+            await s.execute(stmt)
+            await s.commit()
+
+    async def get_perturbation_job(self, tenant_id: UUID, job_id: UUID) -> PerturbationJob | None:
+        async with tenant_session(self._engine, tenant_id) as s:
+            row = (
+                (
+                    await s.execute(
+                        select(perturbation_jobs).where(
+                            perturbation_jobs.c.id == job_id,
+                            perturbation_jobs.c.tenant_id == tenant_id,
+                        )
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            return _perturbation_job_from_row(row) if row else None
+
+    async def list_perturbation_jobs(
+        self, tenant_id: UUID, dataset_id: UUID
+    ) -> list[PerturbationJob]:
+        async with tenant_session(self._engine, tenant_id) as s:
+            rows = (
+                (
+                    await s.execute(
+                        select(perturbation_jobs).where(
+                            perturbation_jobs.c.dataset_id == dataset_id,
+                            perturbation_jobs.c.tenant_id == tenant_id,
+                        )
+                    )
+                )
+                .mappings()
+                .all()
+            )
+            return [_perturbation_job_from_row(r) for r in rows]

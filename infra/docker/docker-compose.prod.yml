@@ -1,0 +1,157 @@
+# On-prem PRODUCTION overlay for infra/docker/docker-compose.yml (the dev
+# backbone). Same services, hardened + the three application containers
+# added on top:
+#
+#   docker compose -f infra/docker/docker-compose.yml \
+#                   -f infra/docker/docker-compose.prod.yml up -d
+#
+# What this file changes vs. the dev backbone:
+#   - Adds api-gateway / generation-worker / web as built, non-dev-mode
+#     containers (the dev backbone alone has no app containers — apps run
+#     on the host via `make dev`).
+#   - `restart: unless-stopped` everywhere (dev has no restart policy).
+#   - Drops host port publishing for backbone services that have no
+#     business being reachable from outside the Docker network in prod
+#     (Postgres, Redis, MinIO, Ray dashboard/client, Temporal UI); only
+#     api-gateway and web are exposed, and even those belong behind a
+#     TLS-terminating reverse proxy (Caddy/nginx) in a real deployment —
+#     left as a follow-up, see docs/deployment.md "On-prem" section.
+#   - Adds `deploy.resources.limits` (Compose v2 applies these outside
+#     Swarm mode too, unlike classic v1 `mem_limit`/`cpus`).
+#
+# Explicitly NOT changed here: Keycloak still runs `start-dev` (inherited
+# from the base file) — a real production Keycloak needs its own external
+# DB + `start` (not `start-dev`) + TLS, which is a Keycloak-operations
+# concern orthogonal to Anodyne's own deployment and out of scope for this
+# sub-system; see docs/deployment.md for the flagged follow-up.
+#
+# Secrets: every `${VAR}` below is read from the environment / a
+# *non-committed* `.env` (see root Makefiles's `-include .env` pattern) —
+# nothing here hardcodes a credential.
+services:
+  postgres:
+    restart: unless-stopped
+    ports: []
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 2G }
+
+  redis:
+    restart: unless-stopped
+    ports: []
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 512M }
+
+  minio:
+    restart: unless-stopped
+    ports: []
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 1G }
+
+  keycloak:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 1G }
+
+  temporal:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 1G }
+
+  # Temporal UI is a debugging convenience, not needed on the public network
+  # in prod; keep the container (ops can `docker compose exec`/port-forward
+  # on demand) but stop publishing it to the host.
+  temporal-ui:
+    restart: unless-stopped
+    ports: []
+
+  ray-head:
+    restart: unless-stopped
+    ports: []
+    deploy:
+      resources:
+        limits: { cpus: "4", memory: 8G }
+
+  ollama:
+    restart: unless-stopped
+    ports: []
+    deploy:
+      resources:
+        limits: { cpus: "4", memory: 8G }
+
+  api-gateway:
+    build:
+      context: ../..
+      dockerfile: apps/api-gateway/Dockerfile
+    image: anodyne/api-gateway:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+    ports: ["8000:8080"]
+    environment:
+      ANODYNE_DATABASE_URL: ${ANODYNE_DATABASE_URL}
+      ANODYNE_SECRET_KEY: ${ANODYNE_SECRET_KEY}
+      ANODYNE_OIDC_ISSUER: ${ANODYNE_OIDC_ISSUER:-http://keycloak:8080/realms/anodyne}
+      ANODYNE_OIDC_JWKS_URL: ${ANODYNE_OIDC_JWKS_URL:-http://keycloak:8080/realms/anodyne/protocol/openid-connect/certs}
+      ANODYNE_OIDC_AUDIENCE: ${ANODYNE_OIDC_AUDIENCE:-anodyne}
+      ANODYNE_S3_BUCKET: ${ANODYNE_S3_BUCKET:-anodyne}
+      ANODYNE_TEMPORAL_ADDRESS: temporal:7233
+      ANODYNE_REDIS_URL: redis://redis:6379/0
+      AWS_ENDPOINT_URL_S3: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio123}
+    deploy:
+      resources:
+        limits: { cpus: "2", memory: 1G }
+
+  generation-worker:
+    build:
+      context: ../..
+      dockerfile: apps/generation-worker/Dockerfile
+    image: anodyne/generation-worker:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+      ray-head: { condition: service_started }
+      temporal: { condition: service_started }
+    environment:
+      ANODYNE_DATABASE_URL: ${ANODYNE_DATABASE_URL}
+      ANODYNE_SECRET_KEY: ${ANODYNE_SECRET_KEY}
+      ANODYNE_S3_BUCKET: ${ANODYNE_S3_BUCKET:-anodyne}
+      ANODYNE_TEMPORAL_ADDRESS: temporal:7233
+      ANODYNE_RAY_ADDRESS: ray://ray-head:10001
+      ANODYNE_REDIS_URL: redis://redis:6379/0
+      AWS_ENDPOINT_URL_S3: http://minio:9000
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio123}
+    deploy:
+      resources:
+        limits: { cpus: "4", memory: 4G }
+
+  web:
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8000}
+    image: anodyne/web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      api-gateway: { condition: service_started }
+    ports: ["3000:3000"]
+    environment:
+      AUTH_SECRET: ${AUTH_SECRET}
+      KEYCLOAK_ISSUER: ${KEYCLOAK_ISSUER:-http://keycloak:8080/realms/anodyne}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-anodyne}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+    deploy:
+      resources:
+        limits: { cpus: "1", memory: 512M }

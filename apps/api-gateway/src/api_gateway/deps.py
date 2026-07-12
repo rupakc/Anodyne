@@ -13,10 +13,16 @@ from anodyne_core.models import ModelConfig, TenantContext
 from anodyne_core.ports import AuthorizationPolicy, LLMProvider, ObjectStore, SecretStore
 from anodyne_dataset.ports import (
     DatasetRepository,
+    Exporter,
+    ExportRepository,
+    PerturbationRepository,
     ProfileRepository,
     SampleProfiler,
     SchemaProposer,
 )
+from anodyne_evaluation.ports import EvaluationRepository
+from anodyne_evaluation.registry import SqlEvaluationRepository
+from anodyne_export.exporter import PyArrowExporter
 from anodyne_generation.proposer import LLMSchemaProposer
 from anodyne_image.registry import SqlImageProviderRegistry
 from anodyne_llm.adapter import LiteLLMProvider
@@ -24,6 +30,7 @@ from anodyne_llm.registry import SqlModelRegistry
 from anodyne_observability.logging import bind_request_context
 from anodyne_storage.dataset_repo import SqlDatasetRepository
 from anodyne_storage.db import make_engine
+from anodyne_storage.export_repo import SqlExportRepository
 from anodyne_storage.objectstore import S3ObjectStore
 from anodyne_storage.secrets import FernetSecretStore
 from anodyne_tabular.profiler import PandasSampleProfiler
@@ -174,6 +181,40 @@ def get_profile_repo(settings: Settings = Depends(get_settings)) -> ProfileRepos
     Overridden in tests via `app.dependency_overrides[get_profile_repo]`.
     """
     return SqlDatasetRepository(_engine(settings.database_url))
+
+
+def get_export_repo(settings: Settings = Depends(get_settings)) -> ExportRepository:
+    """Real, DB-backed `ExportRepository` for transcoded export artifacts.
+
+    Overridden in tests via `app.dependency_overrides[get_export_repo]`.
+    """
+    return SqlExportRepository(_engine(settings.database_url))
+
+
+def get_exporter() -> Exporter:
+    """Real, pyarrow-based `Exporter`.
+
+    Overridden in tests via `app.dependency_overrides[get_exporter]`.
+    """
+    return PyArrowExporter()
+
+
+def get_perturbation_repo(settings: Settings = Depends(get_settings)) -> PerturbationRepository:
+    """Real, DB-backed `PerturbationRepository` (perturbation jobs + lineage).
+
+    `SqlDatasetRepository` implements `DatasetRepository`, `ProfileRepository`,
+    and `PerturbationRepository`. Overridden in tests via
+    `app.dependency_overrides[get_perturbation_repo]`.
+    """
+    return SqlDatasetRepository(_engine(settings.database_url))
+
+
+def get_evaluation_repo(settings: Settings = Depends(get_settings)) -> EvaluationRepository:
+    """Real, DB-backed `EvaluationRepository` (evaluation runs + per-expert results).
+
+    Overridden in tests via `app.dependency_overrides[get_evaluation_repo]`.
+    """
+    return SqlEvaluationRepository(_engine(settings.database_url))
 
 
 def get_sample_profiler() -> SampleProfiler:

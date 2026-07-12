@@ -9,6 +9,8 @@ _VIEWER = {
     "image_providers:read",
     "video_providers:read",
     "audio_providers:read",
+    "perturbations:read",
+    "evaluations:read",
 }
 _MEMBER = _VIEWER | {
     "llm:invoke",
@@ -17,6 +19,8 @@ _MEMBER = _VIEWER | {
     "image_providers:write",
     "video_providers:write",
     "audio_providers:write",
+    "perturbations:write",
+    "evaluations:write",
 }
 _ADMIN = _MEMBER | {
     "models:delete",

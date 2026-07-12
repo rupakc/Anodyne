@@ -1,0 +1,37 @@
+# Root .dockerignore — applies to every `docker build` in this repo since all
+# three Dockerfiles (apps/api-gateway, apps/generation-worker, apps/web) use
+# the repo root as build context (see docs/deployment.md). Keeps images small
+# and, critically, keeps secrets out of build contexts/layers.
+
+# VCS / tooling
+.git
+.github
+.claude
+.venv
+**/__pycache__
+**/*.pyc
+.mypy_cache
+.pytest_cache
+.ruff_cache
+
+# Docs / specs — not needed inside images
+docs
+README.md
+LICENSE
+
+# IaC — irrelevant to application image builds
+infra/terraform
+infra/k8s
+infra/cloudrun
+
+# Node — reinstalled fresh inside the web image; never trust a host node_modules
+**/node_modules
+**/.next
+apps/web/e2e
+apps/web/playwright-report
+apps/web/test-results
+
+# Secrets — never let a stray local .env end up in a build context/layer
+.env
+.env.*
+!.env.example

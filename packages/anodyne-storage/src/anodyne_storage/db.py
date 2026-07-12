@@ -137,6 +137,32 @@ dataset_versions = Table(
     Column("format", String, nullable=False, server_default="parquet"),
     Column("row_count", Integer, nullable=False, server_default="0"),
     Column("checksum", String, nullable=False, server_default=""),
+    # Lineage: the version this one was derived from (e.g. a perturbation).
+    # NULL for freshly generated versions.
+    Column("parent_version_id", PgUUID(as_uuid=True), nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+# Perturbation jobs: a durable run that reads `parent_version_id` and writes a
+# new derived `DatasetVersion` (`result_version_id`). Mirrors `generation_jobs`
+# plus the perturbation config (family/params/intensity/target_fields) + lineage.
+perturbation_jobs = Table(
+    "perturbation_jobs",
+    metadata,
+    Column("id", PgUUID(as_uuid=True), primary_key=True),
+    Column("tenant_id", PgUUID(as_uuid=True), nullable=False),
+    Column("dataset_id", PgUUID(as_uuid=True), nullable=False),
+    Column("parent_version_id", PgUUID(as_uuid=True), nullable=False),
+    Column("family", String, nullable=False),
+    Column("params", JSONB, nullable=False, server_default="{}"),
+    Column("intensity", Float, nullable=False, server_default="0.1"),
+    Column("target_fields", JSONB, nullable=False, server_default="[]"),
+    Column("seed", Integer, nullable=False, server_default="0"),
+    Column("status", String, nullable=False, server_default="pending"),
+    Column("progress", Float, nullable=False, server_default="0.0"),
+    Column("message", Text, nullable=False, server_default=""),
+    Column("workflow_id", String, nullable=True),
+    Column("result_version_id", PgUUID(as_uuid=True), nullable=True),
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
@@ -156,6 +182,57 @@ dataset_profiles = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
+export_artifacts = Table(
+    "export_artifacts",
+    metadata,
+    Column("id", PgUUID(as_uuid=True), primary_key=True),
+    Column("tenant_id", PgUUID(as_uuid=True), nullable=False),
+    Column("dataset_id", PgUUID(as_uuid=True), nullable=False),
+    Column("version_id", PgUUID(as_uuid=True), nullable=False),
+    Column("format", String, nullable=False),
+    Column("row_count", Integer, nullable=False, server_default="0"),
+    Column("object_key", String, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+# Evaluation runs (sub-system F): one row per LLM-as-a-Judge MoE evaluation of a
+# dataset version, mirroring `generation_jobs`' lifecycle shape (status/progress/
+# message/workflow_id) plus the report-artifact locations + overall score.
+evaluation_runs = Table(
+    "evaluation_runs",
+    metadata,
+    Column("id", PgUUID(as_uuid=True), primary_key=True),
+    Column("tenant_id", PgUUID(as_uuid=True), nullable=False),
+    Column("dataset_id", PgUUID(as_uuid=True), nullable=False),
+    Column("dataset_version_id", PgUUID(as_uuid=True), nullable=False),
+    Column("reference_version_id", PgUUID(as_uuid=True), nullable=True),
+    Column("status", String, nullable=False, server_default="pending"),
+    Column("progress", Float, nullable=False, server_default="0.0"),
+    Column("message", Text, nullable=False, server_default=""),
+    Column("workflow_id", String, nullable=True),
+    Column("report_uri", String, nullable=True),
+    Column("report_html_uri", String, nullable=True),
+    Column("overall_score", Float, nullable=True),
+    Column("config", JSONB, nullable=False, server_default="{}"),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+# Per-expert results for an evaluation run (the mixture-of-experts breakdown).
+# Kept in its own table (rather than only inside the JSON artifact) so overall
+# scores per dimension are queryable without fetching the object-store report.
+evaluation_expert_results = Table(
+    "evaluation_expert_results",
+    metadata,
+    Column("id", PgUUID(as_uuid=True), primary_key=True),
+    Column("tenant_id", PgUUID(as_uuid=True), nullable=False),
+    Column("run_id", PgUUID(as_uuid=True), nullable=False),
+    Column("dimension", String, nullable=False),
+    Column("score", Float, nullable=False),
+    Column("rationale", Text, nullable=False, server_default=""),
+    Column("metrics", JSONB, nullable=False, server_default="{}"),
+    Column("recommendations", JSONB, nullable=False, server_default="[]"),
+)
+
 # Tenant-scoped tables get an RLS policy keyed on the per-transaction
 # app.tenant_id GUC. `tenants` is keyed by its own `id`; everything else by
 # its `tenant_id` foreign key.
@@ -167,9 +244,13 @@ _TENANT_TABLES: dict[str, str] = {
     "generation_jobs": "tenant_id",
     "dataset_versions": "tenant_id",
     "dataset_profiles": "tenant_id",
+    "perturbation_jobs": "tenant_id",
     "image_provider_configs": "tenant_id",
     "video_provider_configs": "tenant_id",
     "audio_provider_configs": "tenant_id",
+    "export_artifacts": "tenant_id",
+    "evaluation_runs": "tenant_id",
+    "evaluation_expert_results": "tenant_id",
 }
 
 

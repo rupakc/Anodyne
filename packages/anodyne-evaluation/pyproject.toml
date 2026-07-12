@@ -1,0 +1,32 @@
+[project]
+name = "anodyne-evaluation"
+version = "0.1.0"
+requires-python = ">=3.12"
+# scipy + scikit-learn drive the statistical experts (fidelity KS/JS, privacy
+# nearest-neighbour, TSTR utility). Both already resolve in the workspace; pinned
+# here at the versions the metrics were written against. Evidently is deliberately
+# NOT a dependency -- its metric *families* are mirrored, not imported (see spec).
+dependencies = [
+    "anodyne-core",
+    "anodyne-dataset",
+    "anodyne-storage",
+    "anodyne-tabular",
+    "anodyne-llm",
+    "numpy>=2",
+    # Match anodyne-tabular: pandas 3.0 breaks rdt/copulas/sdv in the shared workspace resolution.
+    "pandas>=2.2,<3",
+    "pyarrow>=17",
+    "scipy>=1.13",
+    "scikit-learn>=1.5",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+anodyne-core = { workspace = true }
+anodyne-dataset = { workspace = true }
+anodyne-storage = { workspace = true }
+anodyne-tabular = { workspace = true }
+anodyne-llm = { workspace = true }

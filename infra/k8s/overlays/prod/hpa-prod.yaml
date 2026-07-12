@@ -1,0 +1,9 @@
+# Prod headroom: base's HPA (infra/k8s/base/api-gateway.yaml) caps at 10;
+# raise the ceiling for real production traffic.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-gateway
+spec:
+  minReplicas: 3
+  maxReplicas: 20

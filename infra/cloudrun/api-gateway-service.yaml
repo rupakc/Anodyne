@@ -1,0 +1,103 @@
+# Cloud Run v2 Service (Knative `serving.knative.dev/v1` shape) for the
+# api-gateway — the platform's only public entry point (see
+# docs/architecture.md §3). Deploy with:
+#
+#   gcloud run services replace infra/cloudrun/api-gateway-service.yaml \
+#     --region "${GCP_REGION}" --project "${GCP_PROJECT_ID}"
+#
+# Placeholders (${...}) are substituted by CI/CD or `envsubst` before apply —
+# see docs/deployment.md "Cloud Run" section. No secret VALUES live here:
+# every credential is a Secret Manager *reference*, resolved by Cloud Run at
+# container start, never baked into the image or this manifest.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: anodyne-api-gateway
+  labels:
+    app: anodyne
+    component: api-gateway
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        # Keep >=1 warm instance: the gateway holds a WebSocket
+        # (/jobs/{id}/stream) for live job progress, so scale-to-zero would
+        # drop long-lived connections; cap instances to bound Cloud SQL/
+        # Postgres connection-pool fan-out.
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "10"
+        # Cloud SQL Auth Proxy sidecar connection (see infra/terraform/cloud_sql.tf).
+        run.googleapis.com/cloudsql-instances: "${GCP_PROJECT_ID}:${GCP_REGION}:${CLOUD_SQL_INSTANCE}"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      serviceAccountName: "${GATEWAY_RUNTIME_SA_EMAIL}"
+      # Concurrent requests per instance; the gateway is async/IO-bound
+      # (FastAPI + asyncpg/redis), so a healthy concurrency is safe.
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      containers:
+        - image: "${GAR_LOCATION}-docker.pkg.dev/${GCP_PROJECT_ID}/${GAR_REPOSITORY}/api-gateway:${IMAGE_TAG}"
+          ports:
+            - name: http1
+              containerPort: 8080
+          resources:
+            limits:
+              cpu: "2"
+              memory: 1Gi
+          env:
+            - name: ANODYNE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: anodyne-database-url
+                  key: latest
+            - name: ANODYNE_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: anodyne-secret-key
+                  key: latest
+            - name: ANODYNE_OIDC_ISSUER
+              value: "${OIDC_ISSUER}"
+            - name: ANODYNE_OIDC_JWKS_URL
+              value: "${OIDC_JWKS_URL}"
+            - name: ANODYNE_OIDC_AUDIENCE
+              value: "anodyne"
+            - name: ANODYNE_S3_BUCKET
+              value: "${GCS_BUCKET}"
+            - name: ANODYNE_TEMPORAL_ADDRESS
+              value: "${TEMPORAL_ADDRESS}"
+            - name: ANODYNE_REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: anodyne-redis-url
+                  key: latest
+            # boto3's S3 client (packages/anodyne-storage) talks to GCS via
+            # its S3-compatible XML API in the cloud — same client code as
+            # MinIO on-prem, only the endpoint + HMAC credentials differ.
+            - name: AWS_ENDPOINT_URL_S3
+              value: "https://storage.googleapis.com"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: anodyne-gcs-hmac-access-key
+                  key: latest
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: anodyne-gcs-hmac-secret
+                  key: latest
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 30
+  traffic:
+    - percent: 100
+      latestRevision: true

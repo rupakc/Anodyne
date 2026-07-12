@@ -93,9 +93,10 @@ def test_build_worker_registers_workflow_and_all_five_activities_on_generation_q
 
     assert isinstance(worker, _FakeWorker)
     assert worker.task_queue == "generation"
-    assert worker.workflows == [GenerationWorkflow]
+    # The worker serves both generation and perturbation workflows on one queue.
+    assert GenerationWorkflow in worker.workflows
     activity_names = {a.__temporal_activity_definition.name for a in worker.activities}
-    assert activity_names == EXPECTED_ACTIVITY_NAMES
+    assert EXPECTED_ACTIVITY_NAMES <= activity_names
 
 
 def test_build_worker_wires_profile_repo_and_tabular_settings(

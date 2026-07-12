@@ -10,8 +10,10 @@ throughout.
 > (all five modalities) are implemented: multi-tenant identity, storage/secrets, observability, an
 > LLM-agnostic layer, and dataset generation for **tabular (from description *and* sample), text,
 > image, audio, and video** — orchestrated by Temporal + Ray, with starter templates and
-> bias/edge-case steering, driven from a Next.js web UI. Perturbation, export, evaluation, and full
-> deployment are on the roadmap (see below).
+> bias/edge-case steering, driven from a Next.js web UI. Deployment & CI/CD — Dockerfiles, a
+> build/SBOM/scan/push pipeline, and Cloud Run/GKE/on-prem manifests — is scaffolded (see
+> `docs/deployment.md`); wiring it up against a real GCP project is a follow-up. Perturbation,
+> export, evaluation, and human-in-the-loop are still on the roadmap (see below).
 
 ## Why Anodyne
 
@@ -56,6 +58,9 @@ packages/
   anodyne-audio         provider-agnostic audio/TTS generation
   anodyne-video         provider-agnostic text-to-video generation
   anodyne-templates     starter templates + bias/edge-case/use-case directives
+  anodyne-perturbation  noise/drift/outlier/bias/edge-case perturbation (tabular + text)
+  anodyne-export        CSV/JSON/Parquet/Arrow chunked export + presigned download
+  anodyne-evaluation    LLM-as-a-Judge mixture-of-experts 360° evaluation + report
   anodyne-compute       Ray shard-generation tasks + GPU actor seams
   anodyne-workflows     Temporal GenerationWorkflow + modality-registry activities
 infra/docker/           docker-compose backbone (Postgres, Redis, MinIO, Keycloak, Temporal, Ray, Ollama)
@@ -107,18 +112,19 @@ exercises Postgres row-level security via testcontainers.
 | C4 | Audio — provider-agnostic TTS (self-hosted / external) | ✅ done |
 | C5 | Video — provider-agnostic text-to-video | ✅ done |
 | C6 | Starter templates + bias/edge-case/use-case directives | ✅ done |
-| D | Perturbation (noise, drift, outliers, bias/edge-case) | planned |
-| E | Export & Storage (CSV/JSON/Parquet/Arrow) | planned |
-| F | Evaluation Engine (LLM-as-a-Judge MoE + reports) | planned |
+| D | Perturbation — noise, drift, outliers/anomalies, bias/edge-case (tabular + text, deterministic) | ✅ done |
+| E | Export & Storage — CSV/JSON/Parquet/Arrow, chunked/streamed, >500K→Parquet default | ✅ done |
+| F | Evaluation Engine — LLM-as-a-Judge MoE (fidelity/diversity/privacy/utility/bias/qualitative) + JSON+HTML report | ✅ done |
 | G | Human-in-the-loop & Annotation | planned |
-| H | Web UI | planned |
-| I | Deployment & CI/CD (GCP + on-prem) | in progress |
+| H | Web UI (full, across all modalities + D/E/F) | planned |
+| I | Deployment & CI/CD (GCP + on-prem) | ✅ Dockerfiles, CI/CD (build+SBOM+Trivy+WIF push), Cloud Run/GKE manifests, Terraform skeleton — see [`docs/deployment.md`](docs/deployment.md) |
 
 ## Documentation
 
 - **Architecture & specs:** [`docs/architecture.md`](docs/architecture.md), `docs/superpowers/specs/`, `docs/superpowers/plans/`.
 - **Local dev runbook:** [`docs/dev-runbook.md`](docs/dev-runbook.md).
-- **Non-technical feature guides (GitHub Wiki):** source in [`docs/wiki/`](docs/wiki/) — plain-language explanations of each feature (Foundation, Bring Your Own AI Model, Multi-Tenancy & Security, Generation Engine, Local Development). Published to the repository Wiki.
+- **Deployment & CI/CD:** [`docs/deployment.md`](docs/deployment.md) — local → on-prem → Cloud Run → GKE, and the secret-management model.
+- **Non-technical feature guides (GitHub Wiki):** source in [`docs/wiki/`](docs/wiki/) — plain-language explanations of each feature (Foundation, Bring Your Own AI Model, Multi-Tenancy & Security, Generation Engine, Local Development, Deployment). Published to the repository Wiki.
 
 ## License
 

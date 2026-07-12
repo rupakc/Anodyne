@@ -1,0 +1,21 @@
+[project]
+name = "evaluation-worker"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["anodyne-core", "anodyne-dataset", "anodyne-storage", "anodyne-llm",
+                "anodyne-evaluation", "anodyne-compute", "anodyne-workflows",
+                "temporalio>=1.7", "ray>=2.35", "redis>=5", "boto3>=1.35",
+                "pydantic-settings>=2.4"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+anodyne-core = { workspace = true }
+anodyne-dataset = { workspace = true }
+anodyne-storage = { workspace = true }
+anodyne-llm = { workspace = true }
+anodyne-evaluation = { workspace = true }
+anodyne-compute = { workspace = true }
+anodyne-workflows = { workspace = true }

@@ -30,9 +30,16 @@ from anodyne_audio.registry import SqlAudioProviderRegistry
 from anodyne_compute import ray_init
 from anodyne_core.ports import SecretStore
 from anodyne_dataset.models import DatasetSpec
-from anodyne_dataset.ports import AudioProvider, DatasetRepository, ProfileRepository
+from anodyne_dataset.ports import (
+    AudioProvider,
+    DatasetRepository,
+    PerturbationRepository,
+    Perturbator,
+    ProfileRepository,
+)
 from anodyne_image.registry import SqlImageProviderRegistry
 from anodyne_llm.registry import SqlModelRegistry
+from anodyne_perturbation import RegistryPerturbator
 from anodyne_storage.dataset_repo import SqlDatasetRepository
 from anodyne_storage.db import make_engine
 from anodyne_storage.secrets import FernetSecretStore
@@ -51,6 +58,14 @@ from anodyne_workflows.activities import (
     register_version,
     set_status,
 )
+from anodyne_workflows.perturbation_activities import (
+    PerturbationActivityContext,
+    apply_perturbation,
+    configure_perturbation_activities,
+    register_perturbed_version,
+    set_perturbation_status,
+)
+from anodyne_workflows.perturbation_workflow import PerturbationWorkflow
 from anodyne_workflows.workflow import GenerationWorkflow
 from temporalio.client import Client
 from temporalio.worker import Worker
@@ -104,6 +119,11 @@ class WorkerDeps:
     # Video generation.
     video_registry: VideoProviderRegistry | None = None
     video_providers: dict[str, VideoProvider] = field(default_factory=dict)
+    # Perturbation (sub-system D). Defaults keep generation-only wiring/tests
+    # unaffected; when a `perturbation_repo` is provided the perturbation
+    # activities are configured so the same worker serves `PerturbationWorkflow`.
+    perturbation_repo: PerturbationRepository | None = None
+    perturbator: Perturbator | None = None
 
 
 def registered_workflows() -> list[type]:
@@ -114,8 +134,18 @@ def registered_activities() -> list[Callable[..., Any]]:
     return [plan_shards, generate_shards, assemble_and_upload, register_version, set_status]
 
 
+def registered_perturbation_workflows() -> list[type]:
+    return [PerturbationWorkflow]
+
+
+def registered_perturbation_activities() -> list[Callable[..., Any]]:
+    return [set_perturbation_status, apply_perturbation, register_perturbed_version]
+
+
 def build_worker(client: Client, deps: WorkerDeps) -> Worker:
-    """Bind activities to `deps` and construct the `Worker` for the "generation" task queue."""
+    """Bind activities to `deps` and construct the `Worker` for the "generation"
+    task queue. The worker serves both `GenerationWorkflow` and
+    `PerturbationWorkflow` (same queue): both are additive and share infra."""
     configure_activities(
         ActivityContext(
             repo=deps.repo,
@@ -134,11 +164,22 @@ def build_worker(client: Client, deps: WorkerDeps) -> Worker:
             video_providers=deps.video_providers,
         )
     )
+    if deps.perturbation_repo is not None:
+        configure_perturbation_activities(
+            PerturbationActivityContext(
+                repo=deps.repo,
+                perturbation_repo=deps.perturbation_repo,
+                perturbator=deps.perturbator or RegistryPerturbator(),
+                s3_bucket=deps.s3_bucket,
+                s3_client=deps.s3_client,
+                publisher=deps.publisher,
+            )
+        )
     return Worker(
         client,
         task_queue=TASK_QUEUE,
-        workflows=registered_workflows(),
-        activities=registered_activities(),
+        workflows=[*registered_workflows(), *registered_perturbation_workflows()],
+        activities=[*registered_activities(), *registered_perturbation_activities()],
     )
 
 
@@ -190,9 +231,12 @@ async def main() -> None:
             s3_bucket=settings.s3_bucket,
             s3_client=s3_client,
             publisher=publisher,
-            # `SqlDatasetRepository` implements both `DatasetRepository` and
-            # `ProfileRepository` -- the same instance serves both roles.
+            # `SqlDatasetRepository` implements `DatasetRepository`,
+            # `ProfileRepository`, and `PerturbationRepository` -- the same
+            # instance serves every role.
             profile_repo=repo,
+            perturbation_repo=repo,
+            perturbator=RegistryPerturbator(),
             ctgan_epochs=settings.tabular_ctgan_epochs,
             enable_sdv=settings.tabular_enable_sdv,
             model_registry=model_registry,

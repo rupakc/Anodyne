@@ -2,10 +2,18 @@ version = 1
 revision = 3
 requires-python = ">=3.12"
 resolution-markers = [
-    "python_full_version >= '3.15'",
-    "python_full_version == '3.14.*'",
-    "python_full_version == '3.13.*'",
-    "python_full_version < '3.13'",
+    "python_full_version >= '3.15' and sys_platform == 'win32'",
+    "python_full_version >= '3.15' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
+    "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
+    "python_full_version < '3.13' and sys_platform == 'emscripten'",
+    "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
 [manifest]
@@ -15,10 +23,13 @@ members = [
     "anodyne-compute",
     "anodyne-core",
     "anodyne-dataset",
+    "anodyne-evaluation",
+    "anodyne-export",
     "anodyne-generation",
     "anodyne-image",
     "anodyne-llm",
     "anodyne-observability",
+    "anodyne-perturbation",
     "anodyne-storage",
     "anodyne-tabular",
     "anodyne-templates",
@@ -27,6 +38,7 @@ members = [
     "anodyne-video",
     "anodyne-workflows",
     "api-gateway",
+    "evaluation-worker",
     "generation-worker",
 ]
 
@@ -195,10 +207,13 @@ dev = [
     { name = "anodyne-compute" },
     { name = "anodyne-core" },
     { name = "anodyne-dataset" },
+    { name = "anodyne-evaluation" },
+    { name = "anodyne-export" },
     { name = "anodyne-generation" },
     { name = "anodyne-image" },
     { name = "anodyne-llm" },
     { name = "anodyne-observability" },
+    { name = "anodyne-perturbation" },
     { name = "anodyne-storage" },
     { name = "anodyne-tabular" },
     { name = "anodyne-templates" },
@@ -207,6 +222,7 @@ dev = [
     { name = "anodyne-video" },
     { name = "anodyne-workflows" },
     { name = "api-gateway" },
+    { name = "evaluation-worker" },
     { name = "generation-worker" },
     { name = "httpx" },
     { name = "moto" },
@@ -225,10 +241,13 @@ dev = [
     { name = "anodyne-compute", editable = "packages/anodyne-compute" },
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "anodyne-evaluation", editable = "packages/anodyne-evaluation" },
+    { name = "anodyne-export", editable = "packages/anodyne-export" },
     { name = "anodyne-generation", editable = "packages/anodyne-generation" },
     { name = "anodyne-image", editable = "packages/anodyne-image" },
     { name = "anodyne-llm", editable = "packages/anodyne-llm" },
     { name = "anodyne-observability", editable = "packages/anodyne-observability" },
+    { name = "anodyne-perturbation", editable = "packages/anodyne-perturbation" },
     { name = "anodyne-storage", editable = "packages/anodyne-storage" },
     { name = "anodyne-tabular", editable = "packages/anodyne-tabular" },
     { name = "anodyne-templates", editable = "packages/anodyne-templates" },
@@ -237,6 +256,7 @@ dev = [
     { name = "anodyne-video", editable = "packages/anodyne-video" },
     { name = "anodyne-workflows", editable = "packages/anodyne-workflows" },
     { name = "api-gateway", editable = "apps/api-gateway" },
+    { name = "evaluation-worker", editable = "apps/evaluation-worker" },
     { name = "generation-worker", editable = "apps/generation-worker" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "moto", specifier = ">=5" },
@@ -275,6 +295,7 @@ source = { editable = "packages/anodyne-compute" }
 dependencies = [
     { name = "anodyne-core" },
     { name = "anodyne-dataset" },
+    { name = "anodyne-evaluation" },
     { name = "anodyne-generation" },
     { name = "anodyne-image" },
     { name = "anodyne-llm" },
@@ -289,6 +310,7 @@ dependencies = [
 requires-dist = [
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "anodyne-evaluation", editable = "packages/anodyne-evaluation" },
     { name = "anodyne-generation", editable = "packages/anodyne-generation" },
     { name = "anodyne-image", editable = "packages/anodyne-image" },
     { name = "anodyne-llm", editable = "packages/anodyne-llm" },
@@ -323,6 +345,54 @@ dependencies = [
 requires-dist = [
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "pydantic", specifier = ">=2.8" },
+]
+
+[[package]]
+name = "anodyne-evaluation"
+version = "0.1.0"
+source = { editable = "packages/anodyne-evaluation" }
+dependencies = [
+    { name = "anodyne-core" },
+    { name = "anodyne-dataset" },
+    { name = "anodyne-llm" },
+    { name = "anodyne-storage" },
+    { name = "anodyne-tabular" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "pyarrow" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anodyne-core", editable = "packages/anodyne-core" },
+    { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "anodyne-llm", editable = "packages/anodyne-llm" },
+    { name = "anodyne-storage", editable = "packages/anodyne-storage" },
+    { name = "anodyne-tabular", editable = "packages/anodyne-tabular" },
+    { name = "numpy", specifier = ">=2" },
+    { name = "pandas", specifier = ">=2.2,<3" },
+    { name = "pyarrow", specifier = ">=17" },
+    { name = "scikit-learn", specifier = ">=1.5" },
+    { name = "scipy", specifier = ">=1.13" },
+]
+
+[[package]]
+name = "anodyne-export"
+version = "0.1.0"
+source = { editable = "packages/anodyne-export" }
+dependencies = [
+    { name = "anodyne-core" },
+    { name = "anodyne-dataset" },
+    { name = "pyarrow" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anodyne-core", editable = "packages/anodyne-core" },
+    { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "pyarrow", specifier = ">=17" },
 ]
 
 [[package]]
@@ -404,6 +474,27 @@ requires-dist = [
 ]
 
 [[package]]
+name = "anodyne-perturbation"
+version = "0.1.0"
+source = { editable = "packages/anodyne-perturbation" }
+dependencies = [
+    { name = "anodyne-core" },
+    { name = "anodyne-dataset" },
+    { name = "numpy" },
+    { name = "pyarrow" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anodyne-core", editable = "packages/anodyne-core" },
+    { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "numpy", specifier = ">=2" },
+    { name = "pyarrow", specifier = ">=17" },
+    { name = "pydantic", specifier = ">=2.8" },
+]
+
+[[package]]
 name = "anodyne-storage"
 version = "0.1.0"
 source = { editable = "packages/anodyne-storage" }
@@ -436,7 +527,8 @@ dependencies = [
     { name = "anodyne-core" },
     { name = "anodyne-dataset" },
     { name = "copulas" },
-    { name = "ctgan" },
+    { name = "ctgan", version = "0.11.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
+    { name = "ctgan", version = "0.12.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "faker" },
     { name = "mimesis" },
     { name = "numpy" },
@@ -460,7 +552,7 @@ requires-dist = [
     { name = "faker", specifier = ">=30" },
     { name = "mimesis", specifier = ">=18" },
     { name = "numpy", specifier = ">=2" },
-    { name = "pandas", specifier = ">=2.2" },
+    { name = "pandas", specifier = ">=2.2,<3" },
     { name = "pyarrow", specifier = ">=17" },
     { name = "rdt", specifier = ">=1.12" },
     { name = "sdv", marker = "extra == 'sdv'", specifier = ">=1.15" },
@@ -549,7 +641,9 @@ dependencies = [
     { name = "anodyne-compute" },
     { name = "anodyne-core" },
     { name = "anodyne-dataset" },
+    { name = "anodyne-evaluation" },
     { name = "anodyne-image" },
+    { name = "anodyne-perturbation" },
     { name = "anodyne-storage" },
     { name = "anodyne-tabular" },
     { name = "anodyne-video" },
@@ -564,7 +658,9 @@ requires-dist = [
     { name = "anodyne-compute", editable = "packages/anodyne-compute" },
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "anodyne-evaluation", editable = "packages/anodyne-evaluation" },
     { name = "anodyne-image", editable = "packages/anodyne-image" },
+    { name = "anodyne-perturbation", editable = "packages/anodyne-perturbation" },
     { name = "anodyne-storage", editable = "packages/anodyne-storage" },
     { name = "anodyne-tabular", editable = "packages/anodyne-tabular" },
     { name = "anodyne-video", editable = "packages/anodyne-video" },
@@ -594,6 +690,8 @@ dependencies = [
     { name = "anodyne-audio" },
     { name = "anodyne-core" },
     { name = "anodyne-dataset" },
+    { name = "anodyne-evaluation" },
+    { name = "anodyne-export" },
     { name = "anodyne-generation" },
     { name = "anodyne-image" },
     { name = "anodyne-llm" },
@@ -618,6 +716,8 @@ requires-dist = [
     { name = "anodyne-audio", editable = "packages/anodyne-audio" },
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "anodyne-evaluation", editable = "packages/anodyne-evaluation" },
+    { name = "anodyne-export", editable = "packages/anodyne-export" },
     { name = "anodyne-generation", editable = "packages/anodyne-generation" },
     { name = "anodyne-image", editable = "packages/anodyne-image" },
     { name = "anodyne-llm", editable = "packages/anodyne-llm" },
@@ -1016,14 +1116,46 @@ wheels = [
 
 [[package]]
 name = "ctgan"
+version = "0.11.1"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version == '3.13.*' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
+    "python_full_version < '3.13' and sys_platform == 'emscripten'",
+    "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+]
+dependencies = [
+    { name = "numpy", marker = "python_full_version < '3.14'" },
+    { name = "pandas", marker = "python_full_version < '3.14'" },
+    { name = "rdt", marker = "python_full_version < '3.14'" },
+    { name = "torch", marker = "python_full_version < '3.14'" },
+    { name = "tqdm", marker = "python_full_version < '3.14'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7a/52/9e92521d17ad99fd8224972d4e639d9fce1bd82af0cb84f34b40f97ddb60/ctgan-0.11.1.tar.gz", hash = "sha256:d6a5dee0f063db4d44d188865fb52ae4cc95c9ed42c679c4e9fcab39163f850e", size = 26820, upload-time = "2025-10-30T21:32:04.43Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b7/a7/b2323fff20b408ac8aba3c8981509131aa14b3aa566fa577fca86b395e8e/ctgan-0.11.1-py3-none-any.whl", hash = "sha256:e52b25a3f83c678ec910358608c9ade694e15377438bcd69c44bea521c7f7942", size = 25281, upload-time = "2025-10-30T21:32:03.012Z" },
+]
+
+[[package]]
+name = "ctgan"
 version = "0.12.1"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.15' and sys_platform == 'win32'",
+    "python_full_version >= '3.15' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
+    "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+]
 dependencies = [
-    { name = "numpy" },
-    { name = "pandas" },
-    { name = "rdt" },
-    { name = "torch" },
-    { name = "tqdm" },
+    { name = "numpy", marker = "python_full_version >= '3.14'" },
+    { name = "pandas", marker = "python_full_version >= '3.14'" },
+    { name = "rdt", marker = "python_full_version >= '3.14'" },
+    { name = "torch", marker = "python_full_version >= '3.14'" },
+    { name = "tqdm", marker = "python_full_version >= '3.14'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/f4/0e/50724b2e49ad83c2ebd00d8b57753dc07f256b27e64aca1306de5f4666b8/ctgan-0.12.1.tar.gz", hash = "sha256:e545c2b1a752affba3de2933a5f8037228e837f7a73f5593399b52cfe9611bc7", size = 27072, upload-time = "2026-02-13T03:22:40.909Z" }
 wheels = [
@@ -1035,7 +1167,7 @@ name = "cuda-bindings"
 version = "13.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cuda-pathfinder", marker = "python_full_version < '3.15'" },
+    { name = "cuda-pathfinder", marker = "python_full_version < '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ce/67/5e7dba1ba576dd73da5dee894ca076ca5e959450dfff66d6d510a255d1f7/cuda_bindings-13.3.1-cp312-cp312-manylinux_2_24_aarch64.manylinux_2_28_aarch64.whl", hash = "sha256:c7855c4868aabc0cfae28abbe83d56734bdfbd08f08fc234ac1912a12858bf49", size = 6025351, upload-time = "2026-05-29T23:11:49.685Z" },
@@ -1066,43 +1198,43 @@ wheels = [
 
 [package.optional-dependencies]
 cublas = [
-    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
-    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 cudart = [
-    { name = "nvidia-cuda-runtime", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-cuda-runtime", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 cufft = [
-    { name = "nvidia-cufft", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-cufft", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 cufile = [
     { name = "nvidia-cufile", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 cupti = [
-    { name = "nvidia-cuda-cupti", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-cuda-cupti", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 curand = [
-    { name = "nvidia-curand", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-curand", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 cusolver = [
-    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
-    { name = "nvidia-cusolver", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
-    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-cublas", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "nvidia-cusolver", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 cusparse = [
-    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-cusparse", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 nvjitlink = [
-    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-nvjitlink", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 nvrtc = [
-    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-cuda-nvrtc", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 nvtx = [
-    { name = "nvidia-nvtx", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux') or (platform_machine == 'AMD64' and sys_platform == 'win32')" },
+    { name = "nvidia-nvtx", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 
 [[package]]
@@ -1141,6 +1273,41 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/88/7f/731ff914b0255d3d065f45fd4e626d4b8c95dbcbaada049f337a6ac16410/docker-7.2.0.tar.gz", hash = "sha256:cebb93773d334f778e023a7ee352a8d6e13ab1bd3b863a4d4a59dec897df43ac", size = 118731, upload-time = "2026-07-09T14:53:46.39Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/75/23/529140fe1aab80fc6992f93a706deec709140a6397439139a054e1515c45/docker-7.2.0-py3-none-any.whl", hash = "sha256:a3f45fdeb9165e2d25d9a1d02ddf3bc70fb572cf5ebbf9b58558c22caf29b71f", size = 148775, upload-time = "2026-07-09T14:53:45.224Z" },
+]
+
+[[package]]
+name = "evaluation-worker"
+version = "0.1.0"
+source = { editable = "apps/evaluation-worker" }
+dependencies = [
+    { name = "anodyne-compute" },
+    { name = "anodyne-core" },
+    { name = "anodyne-dataset" },
+    { name = "anodyne-evaluation" },
+    { name = "anodyne-llm" },
+    { name = "anodyne-storage" },
+    { name = "anodyne-workflows" },
+    { name = "boto3" },
+    { name = "pydantic-settings" },
+    { name = "ray" },
+    { name = "redis" },
+    { name = "temporalio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anodyne-compute", editable = "packages/anodyne-compute" },
+    { name = "anodyne-core", editable = "packages/anodyne-core" },
+    { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "anodyne-evaluation", editable = "packages/anodyne-evaluation" },
+    { name = "anodyne-llm", editable = "packages/anodyne-llm" },
+    { name = "anodyne-storage", editable = "packages/anodyne-storage" },
+    { name = "anodyne-workflows", editable = "packages/anodyne-workflows" },
+    { name = "boto3", specifier = ">=1.35" },
+    { name = "pydantic-settings", specifier = ">=2.4" },
+    { name = "ray", specifier = ">=2.35" },
+    { name = "redis", specifier = ">=5" },
+    { name = "temporalio", specifier = ">=1.7" },
 ]
 
 [[package]]
@@ -2200,7 +2367,7 @@ name = "nvidia-cublas"
 version = "13.1.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cuda-nvrtc" },
+    { name = "nvidia-cuda-nvrtc", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/a1/0bd24ee8c8d03adac032fd2909426a00c88f8c57961b1277ded97f91119f/nvidia_cublas-13.1.1.3-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:b7a210458267ac818974c53038fbec2e969d5c99f305ab15c72522fa9f001dd5", size = 542848918, upload-time = "2026-04-08T18:46:22.985Z" },
@@ -2239,7 +2406,7 @@ name = "nvidia-cudnn-cu13"
 version = "9.20.0.48"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas" },
+    { name = "nvidia-cublas", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/56/c5/83384d846b2fd17c44bd499b36c75a45ed4f095fbbb2252294e89cea5c5c/nvidia_cudnn_cu13-9.20.0.48-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:e31454ae00094b0c55319d9d15b6fa2fc50a9e1c0f5c8c80fb75258234e731e1", size = 444574296, upload-time = "2026-03-09T19:28:27.751Z" },
@@ -2251,7 +2418,7 @@ name = "nvidia-cufft"
 version = "12.0.0.61"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink" },
+    { name = "nvidia-nvjitlink", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8b/ae/f417a75c0259e85c1d2f83ca4e960289a5f814ed0cea74d18c353d3e989d/nvidia_cufft-12.0.0.61-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:2708c852ef8cd89d1d2068bdbece0aa188813a0c934db3779b9b1faa8442e5f5", size = 214053554, upload-time = "2025-09-04T08:31:38.196Z" },
@@ -2281,9 +2448,9 @@ name = "nvidia-cusolver"
 version = "12.0.4.66"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-cublas" },
-    { name = "nvidia-cusparse" },
-    { name = "nvidia-nvjitlink" },
+    { name = "nvidia-cublas", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "nvidia-cusparse", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
+    { name = "nvidia-nvjitlink", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/c8/c3/b30c9e935fc01e3da443ec0116ed1b2a009bb867f5324d3f2d7e533e776b/nvidia_cusolver-12.0.4.66-py3-none-manylinux_2_27_aarch64.whl", hash = "sha256:02c2457eaa9e39de20f880f4bd8820e6a1cfb9f9a34f820eb12a155aa5bc92d2", size = 223467760, upload-time = "2025-09-04T08:33:04.222Z" },
@@ -2295,7 +2462,7 @@ name = "nvidia-cusparse"
 version = "12.6.3.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "nvidia-nvjitlink" },
+    { name = "nvidia-nvjitlink", marker = "sys_platform != 'emscripten' and sys_platform != 'win32'" },
 ]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f8/94/5c26f33738ae35276672f12615a64bd008ed5be6d1ebcb23579285d960a9/nvidia_cusparse-12.6.3.3-py3-none-manylinux2014_aarch64.manylinux_2_17_aarch64.whl", hash = "sha256:80bcc4662f23f1054ee334a15c72b8940402975e0eab63178fc7e670aa59472c", size = 162155568, upload-time = "2025-09-04T08:33:42.864Z" },
@@ -3405,7 +3572,8 @@ dependencies = [
     { name = "botocore" },
     { name = "cloudpickle" },
     { name = "copulas" },
-    { name = "ctgan" },
+    { name = "ctgan", version = "0.11.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.14'" },
+    { name = "ctgan", version = "0.12.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.14'" },
     { name = "deepecho" },
     { name = "graphviz" },
     { name = "numpy" },

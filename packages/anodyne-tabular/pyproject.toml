@@ -5,7 +5,8 @@ requires-python = ">=3.12"
 dependencies = [
     "anodyne-core",
     "anodyne-dataset",
-    "pandas>=2.2",
+    # Pin below 3.0: pandas 3.0 breaks rdt/copulas/sdv (the default from-sample copula path).
+    "pandas>=2.2,<3",
     "pyarrow>=17",
     "numpy>=2",
     "faker>=30",

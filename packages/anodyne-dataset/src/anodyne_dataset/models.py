@@ -75,6 +75,58 @@ class DatasetVersion(BaseModel):
     format: str = "parquet"
     row_count: int = 0
     checksum: str = ""
+    # Lineage: set when this version was derived from another (e.g. a
+    # perturbation of `parent_version_id`). `None` for freshly generated
+    # versions -- additive, so every existing caller/test is unaffected.
+    parent_version_id: UUID | None = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class PerturbationFamily(StrEnum):
+    """The five controlled-corruption families (architecture requirements 3 & 4)."""
+
+    NOISE = "noise"
+    DRIFT = "drift"
+    OUTLIERS = "outliers"
+    BIAS = "bias"
+    EDGE_CASE = "edge_case"
+
+
+class PerturbationSpec(BaseModel):
+    """Typed config for one perturbation: which family, how hard, on which fields.
+
+    `params` is a free-form dict (consistent with `FieldSpec.constraints` and
+    `DatasetSpec.directives`); the `anodyne_perturbation` adapter parses it into
+    typed per-family param models. `target_fields` empty means "all eligible
+    fields for this family". `intensity` is a 0..1 knob interpreted per family.
+    """
+
+    family: PerturbationFamily
+    intensity: float = 0.1
+    target_fields: list[str] = Field(default_factory=list)
+    params: dict[str, object] = Field(default_factory=dict)
+    # Persisted so a stored job is replayable: the same seed reproduces the exact perturbation.
+    seed: int = 0
+
+
+class PerturbationJob(BaseModel):
+    """A durable perturbation run: parent version in, derived version out.
+
+    Mirrors `GenerationJob` (status/progress/message/workflow_id) and adds the
+    lineage (`parent_version_id`), the embedded `PerturbationSpec`, and the
+    `result_version_id` stamped once the derived `DatasetVersion` is registered.
+    """
+
+    id: UUID
+    tenant_id: UUID
+    dataset_id: UUID
+    parent_version_id: UUID
+    spec: PerturbationSpec
+    status: JobStatus = JobStatus.PENDING
+    progress: float = 0.0
+    message: str = ""
+    workflow_id: str | None = None
+    result_version_id: UUID | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
@@ -112,6 +164,19 @@ class Profile(BaseModel):
     correlations: dict[str, dict[str, float]] = Field(default_factory=dict)
     sample_uri: str
     sample_filename: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class ExportArtifact(BaseModel):
+    """A `DatasetVersion` transcoded to a downloadable format (CSV/JSON/Parquet/Arrow)."""
+
+    id: UUID
+    tenant_id: UUID
+    dataset_id: UUID
+    version_id: UUID
+    format: str
+    row_count: int
+    object_key: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 

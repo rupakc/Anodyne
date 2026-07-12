@@ -1,0 +1,20 @@
+# Non-secret runtime configuration shared by api-gateway + generation-worker.
+# Mirrors the `ANODYNE_*` env vars read by apps/api-gateway/src/api_gateway/config.py
+# and apps/generation-worker/src/generation_worker/config.py. Real per-environment
+# values are supplied by the dev/prod Kustomize overlays (infra/k8s/overlays/*)
+# via a configMapGenerator or literal patch — nothing here is environment-real.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: anodyne-config
+data:
+  ANODYNE_OIDC_ISSUER: "http://keycloak.anodyne.svc.cluster.local:8080/realms/anodyne"
+  ANODYNE_OIDC_JWKS_URL: "http://keycloak.anodyne.svc.cluster.local:8080/realms/anodyne/protocol/openid-connect/certs"
+  ANODYNE_OIDC_AUDIENCE: "anodyne"
+  ANODYNE_S3_BUCKET: "anodyne"
+  ANODYNE_TEMPORAL_ADDRESS: "temporal-frontend.anodyne.svc.cluster.local:7233"
+  # Ray client address for the KubeRay-managed cluster (see raycluster.yaml).
+  # KubeRay's head Service is named "<RayCluster name>-head-svc" and exposes
+  # the client port (10001) in-cluster.
+  ANODYNE_RAY_ADDRESS: "ray://anodyne-ray-head-svc.anodyne.svc.cluster.local:10001"
+  NEXT_PUBLIC_API_BASE: "https://api.anodyne.example.com"

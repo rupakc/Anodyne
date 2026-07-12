@@ -1,0 +1,118 @@
+# api-gateway: FastAPI OIDC gateway, the platform's only public entry point
+# (see docs/architecture.md §3). Runs `uvicorn api_gateway.app:create_app
+# --factory` (baked into apps/api-gateway/Dockerfile's CMD).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  labels:
+    app.kubernetes.io/name: api-gateway
+    app.kubernetes.io/part-of: anodyne
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: api-gateway
+        app.kubernetes.io/part-of: anodyne
+    spec:
+      # No `automountServiceAccountToken` needed since the gateway doesn't
+      # call the Kubernetes API; a dedicated k8s ServiceAccount is still
+      # used so Workload Identity (GKE) can bind it to a GCP SA for GCS/
+      # Secret Manager access without any node-wide credentials.
+      serviceAccountName: anodyne-api-gateway
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: api-gateway
+          image: api-gateway:latest # replaced per-overlay (see kustomization.yaml images:)
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: anodyne-config
+            - secretRef:
+                name: anodyne-secrets
+          env:
+            - name: PORT
+              value: "8080"
+            # readOnlyRootFilesystem below still needs *somewhere* writable
+            # for stdlib/third-party scratch use (tempfile, HF/torch caches
+            # pulled in transitively by anodyne-tabular/-image/-audio/-video);
+            # HOME + TMPDIR point at the emptyDir mounted below.
+            - name: HOME
+              value: /tmp
+            - name: TMPDIR
+              value: /tmp
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          startupProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+            failureThreshold: 12
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 30
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: anodyne-api-gateway
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+  labels:
+    app.kubernetes.io/name: api-gateway
+spec:
+  selector:
+    app.kubernetes.io/name: api-gateway
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-gateway
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-gateway
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70

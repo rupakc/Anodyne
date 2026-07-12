@@ -1,0 +1,24 @@
+# Strategic-merge patch applied to every Deployment in base (see
+# kustomization.yaml `patches[].target.kind: Deployment`) — dev runs single
+# replicas with small resource requests to keep a shared dev cluster cheap.
+# Matched by name against each base Deployment.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: generation-worker
+spec:
+  replicas: 1
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 1

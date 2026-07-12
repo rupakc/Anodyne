@@ -4,6 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = ["anodyne-dataset", "anodyne-generation", "anodyne-tabular", "anodyne-text",
                 "anodyne-image", "anodyne-core", "anodyne-llm", "anodyne-storage",
+                "anodyne-evaluation",
                 "ray>=2.35", "pyarrow>=17"]
 
 [build-system]
@@ -19,3 +20,4 @@ anodyne-image = { workspace = true }
 anodyne-core = { workspace = true }
 anodyne-llm = { workspace = true }
 anodyne-storage = { workspace = true }
+anodyne-evaluation = { workspace = true }

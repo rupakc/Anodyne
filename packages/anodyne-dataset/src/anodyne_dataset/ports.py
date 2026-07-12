@@ -9,13 +9,17 @@ from anodyne_dataset.models import (
     AudioSynthesisResult,
     DatasetSpec,
     DatasetVersion,
+    ExportArtifact,
     FieldSpec,
     GenerationJob,
+    PerturbationJob,
+    PerturbationSpec,
     Profile,
 )
 
 if TYPE_CHECKING:
     import pyarrow  # type: ignore[import-untyped]
+    from anodyne_core.ports import ObjectStore
 
 
 class DatasetRepository(ABC):
@@ -51,6 +55,42 @@ class Generator(ABC):
     ) -> pyarrow.Table: ...
 
 
+class Perturbator(ABC):
+    """Applies a `PerturbationSpec` to a modality's artifact table, producing a
+    corrupted copy. Deterministic + seeded exactly like `Generator.generate`:
+    the same `(spec, table, modality, seed)` always yields the same output.
+
+    Synchronous (CPU-bound); async callers run it via `asyncio.to_thread`.
+    """
+
+    @abstractmethod
+    def perturb(
+        self,
+        spec: PerturbationSpec,
+        table: pyarrow.Table,
+        modality: str,
+        seed: int,
+    ) -> pyarrow.Table: ...
+
+
+class PerturbationRepository(ABC):
+    """Persists `PerturbationJob`s. Kept separate from `DatasetRepository` (like
+    `ProfileRepository`) so adding it never breaks an existing repo fake."""
+
+    @abstractmethod
+    async def save_perturbation_job(self, job: PerturbationJob) -> None: ...
+
+    @abstractmethod
+    async def get_perturbation_job(
+        self, tenant_id: UUID, job_id: UUID
+    ) -> PerturbationJob | None: ...
+
+    @abstractmethod
+    async def list_perturbation_jobs(
+        self, tenant_id: UUID, dataset_id: UUID
+    ) -> list[PerturbationJob]: ...
+
+
 class SchemaProposer(ABC):
     @abstractmethod
     async def propose(self, description: str) -> list[FieldSpec]: ...
@@ -78,6 +118,37 @@ class ProfileRepository(ABC):
 
     @abstractmethod
     async def get_profile(self, tenant_id: UUID, dataset_id: UUID) -> Profile | None: ...
+
+
+class ExportRepository(ABC):
+    """Persists `ExportArtifact`s. Kept separate from `DatasetRepository`, mirroring
+    `ProfileRepository`, so adding it never breaks an existing `DatasetRepository`
+    implementation/fake."""
+
+    @abstractmethod
+    async def add_export(self, artifact: ExportArtifact) -> None: ...
+
+    @abstractmethod
+    async def list_exports(self, tenant_id: UUID, dataset_id: UUID) -> list[ExportArtifact]: ...
+
+
+class Exporter(ABC):
+    """Serializes a stored `DatasetVersion` artifact to a downloadable format.
+
+    Implemented by `anodyne_export.exporter.PyArrowExporter` (CSV/JSON/Parquet/Arrow, chunked via
+    pyarrow). Takes the `ObjectStore` explicitly (like `SampleProfiler` takes raw bytes) rather than
+    holding one, so callers control tenant scoping.
+    """
+
+    @abstractmethod
+    async def export(
+        self,
+        version: DatasetVersion,
+        store: ObjectStore,
+        *,
+        format: str | None = None,
+        batch_size: int = 50_000,
+    ) -> ExportArtifact: ...
 
 
 class AudioProvider(ABC):

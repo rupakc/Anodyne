@@ -1,0 +1,80 @@
+# OPTIONAL — Ray cluster for GKE, via the KubeRay operator.
+#
+# Not wired into kustomization.yaml on purpose: `RayCluster` is a KubeRay
+# Custom Resource, and the KubeRay operator + its CRDs are a cluster-scoped,
+# one-time install (Helm chart `kuberay-operator`, see
+# https://docs.ray.io/en/latest/cluster/kubernetes/getting-started.html) —
+# not something a per-namespace Kustomize overlay should assume is present.
+# `kustomize build` must succeed on a cluster *without* KubeRay installed, so
+# this file stays out of the base/overlay resource lists.
+#
+# Once the operator is installed, apply this alongside the rest:
+#   kubectl apply -f infra/k8s/base/raycluster.yaml -n anodyne
+#
+# generation-worker's ANODYNE_RAY_ADDRESS (infra/k8s/base/configmap.yaml)
+# already points at this cluster's head service
+# (`anodyne-ray-head-svc.anodyne.svc.cluster.local:10001`), matching the
+# `metadata.name` below (KubeRay names the head Service "<name>-head-svc").
+#
+# For the local Docker Compose backbone, the equivalent is the single-node
+# `rayproject/ray` `ray-head` service in infra/docker/docker-compose.yml —
+# this manifest is the GKE-scale replacement, not a new concept.
+apiVersion: ray.io/v1
+kind: RayCluster
+metadata:
+  name: anodyne-ray
+  labels:
+    app.kubernetes.io/part-of: anodyne
+spec:
+  rayVersion: "2.35.0" # matches infra/docker/docker-compose.yml's rayproject/ray image tag
+  headGroupSpec:
+    rayStartParams:
+      dashboard-host: "0.0.0.0"
+    template:
+      spec:
+        containers:
+          - name: ray-head
+            image: rayproject/ray:2.35.0
+            resources:
+              requests: { cpu: "2", memory: 4Gi }
+              limits: { cpu: "4", memory: 8Gi }
+            ports:
+              - containerPort: 6379 # GCS
+              - containerPort: 8265 # dashboard
+              - containerPort: 10001 # Ray client — matches ANODYNE_RAY_ADDRESS above
+  workerGroupSpecs:
+    - groupName: cpu-workers
+      replicas: 2
+      minReplicas: 1
+      maxReplicas: 10
+      rayStartParams: {}
+      template:
+        spec:
+          containers:
+            - name: ray-worker
+              image: rayproject/ray:2.35.0
+              resources:
+                requests: { cpu: "2", memory: 4Gi }
+                limits: { cpu: "4", memory: 8Gi }
+    # GPU pool for image/audio/video modalities needing local model inference
+    # (SDXL, self-hosted TTS/video) — separate node pool with a GPU taint;
+    # left at 0 replicas so it costs nothing until a tenant actually enables
+    # a self-hosted media provider. Scale via `kubectl scale` or the
+    # overlays/prod patch once real GPU quota is provisioned.
+    - groupName: gpu-workers
+      replicas: 0
+      minReplicas: 0
+      maxReplicas: 4
+      rayStartParams: {}
+      template:
+        spec:
+          tolerations:
+            - key: nvidia.com/gpu
+              operator: Exists
+              effect: NoSchedule
+          containers:
+            - name: ray-worker-gpu
+              image: rayproject/ray:2.35.0-gpu
+              resources:
+                requests: { cpu: "4", memory: 16Gi, nvidia.com/gpu: "1" }
+                limits: { cpu: "8", memory: 32Gi, nvidia.com/gpu: "1" }

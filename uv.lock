@@ -16,6 +16,7 @@ members = [
     "anodyne-llm",
     "anodyne-observability",
     "anodyne-storage",
+    "anodyne-templates",
     "anodyne-tenancy",
     "anodyne-workflows",
     "api-gateway",
@@ -190,6 +191,7 @@ dev = [
     { name = "anodyne-llm" },
     { name = "anodyne-observability" },
     { name = "anodyne-storage" },
+    { name = "anodyne-templates" },
     { name = "anodyne-tenancy" },
     { name = "anodyne-workflows" },
     { name = "api-gateway" },
@@ -214,6 +216,7 @@ dev = [
     { name = "anodyne-llm", editable = "packages/anodyne-llm" },
     { name = "anodyne-observability", editable = "packages/anodyne-observability" },
     { name = "anodyne-storage", editable = "packages/anodyne-storage" },
+    { name = "anodyne-templates", editable = "packages/anodyne-templates" },
     { name = "anodyne-tenancy", editable = "packages/anodyne-tenancy" },
     { name = "anodyne-workflows", editable = "packages/anodyne-workflows" },
     { name = "api-gateway", editable = "apps/api-gateway" },
@@ -353,6 +356,21 @@ requires-dist = [
 ]
 
 [[package]]
+name = "anodyne-templates"
+version = "0.1.0"
+source = { editable = "packages/anodyne-templates" }
+dependencies = [
+    { name = "anodyne-dataset" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "pydantic", specifier = ">=2.8" },
+]
+
+[[package]]
 name = "anodyne-tenancy"
 version = "0.1.0"
 source = { editable = "packages/anodyne-tenancy" }
@@ -418,6 +436,7 @@ dependencies = [
     { name = "anodyne-llm" },
     { name = "anodyne-observability" },
     { name = "anodyne-storage" },
+    { name = "anodyne-templates" },
     { name = "anodyne-tenancy" },
     { name = "anodyne-workflows" },
     { name = "fastapi" },
@@ -436,6 +455,7 @@ requires-dist = [
     { name = "anodyne-llm", editable = "packages/anodyne-llm" },
     { name = "anodyne-observability", editable = "packages/anodyne-observability" },
     { name = "anodyne-storage", editable = "packages/anodyne-storage" },
+    { name = "anodyne-templates", editable = "packages/anodyne-templates" },
     { name = "anodyne-tenancy", editable = "packages/anodyne-tenancy" },
     { name = "anodyne-workflows", editable = "packages/anodyne-workflows" },
     { name = "fastapi", specifier = ">=0.115" },

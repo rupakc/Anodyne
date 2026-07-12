@@ -10,7 +10,12 @@ import jwt
 import redis.asyncio as redis
 from anodyne_core.models import ModelConfig, TenantContext
 from anodyne_core.ports import AuthorizationPolicy, LLMProvider, ObjectStore, SecretStore
-from anodyne_dataset.ports import DatasetRepository, SchemaProposer
+from anodyne_dataset.ports import (
+    DatasetRepository,
+    ProfileRepository,
+    SampleProfiler,
+    SchemaProposer,
+)
 from anodyne_generation.proposer import LLMSchemaProposer
 from anodyne_llm.adapter import LiteLLMProvider
 from anodyne_llm.registry import SqlModelRegistry
@@ -19,6 +24,7 @@ from anodyne_storage.dataset_repo import SqlDatasetRepository
 from anodyne_storage.db import make_engine
 from anodyne_storage.objectstore import S3ObjectStore
 from anodyne_storage.secrets import FernetSecretStore
+from anodyne_tabular.profiler import PandasSampleProfiler
 from anodyne_tenancy.authz import RoleBasedPolicy
 from anodyne_tenancy.oidc import AuthError, TokenValidator
 from fastapi import Depends, Header, HTTPException
@@ -144,6 +150,23 @@ def get_dataset_repo(settings: Settings = Depends(get_settings)) -> DatasetRepos
     Overridden in tests via `app.dependency_overrides[get_dataset_repo]`.
     """
     return SqlDatasetRepository(_engine(settings.database_url))
+
+
+def get_profile_repo(settings: Settings = Depends(get_settings)) -> ProfileRepository:
+    """Real, DB-backed `ProfileRepository` for uploaded-sample profiles.
+
+    `SqlDatasetRepository` implements both `DatasetRepository` and `ProfileRepository`.
+    Overridden in tests via `app.dependency_overrides[get_profile_repo]`.
+    """
+    return SqlDatasetRepository(_engine(settings.database_url))
+
+
+def get_sample_profiler() -> SampleProfiler:
+    """Real, pandas-based `SampleProfiler`.
+
+    Overridden in tests via `app.dependency_overrides[get_sample_profiler]`.
+    """
+    return PandasSampleProfiler()
 
 
 async def get_schema_proposer(

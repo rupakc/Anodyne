@@ -18,6 +18,7 @@ members = [
     "anodyne-storage",
     "anodyne-templates",
     "anodyne-tenancy",
+    "anodyne-text",
     "anodyne-workflows",
     "api-gateway",
     "generation-worker",
@@ -193,6 +194,7 @@ dev = [
     { name = "anodyne-storage" },
     { name = "anodyne-templates" },
     { name = "anodyne-tenancy" },
+    { name = "anodyne-text" },
     { name = "anodyne-workflows" },
     { name = "api-gateway" },
     { name = "generation-worker" },
@@ -218,6 +220,7 @@ dev = [
     { name = "anodyne-storage", editable = "packages/anodyne-storage" },
     { name = "anodyne-templates", editable = "packages/anodyne-templates" },
     { name = "anodyne-tenancy", editable = "packages/anodyne-tenancy" },
+    { name = "anodyne-text", editable = "packages/anodyne-text" },
     { name = "anodyne-workflows", editable = "packages/anodyne-workflows" },
     { name = "api-gateway", editable = "apps/api-gateway" },
     { name = "generation-worker", editable = "apps/generation-worker" },
@@ -235,16 +238,24 @@ name = "anodyne-compute"
 version = "0.1.0"
 source = { editable = "packages/anodyne-compute" }
 dependencies = [
+    { name = "anodyne-core" },
     { name = "anodyne-dataset" },
     { name = "anodyne-generation" },
+    { name = "anodyne-llm" },
+    { name = "anodyne-storage" },
+    { name = "anodyne-text" },
     { name = "pyarrow" },
     { name = "ray" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
     { name = "anodyne-generation", editable = "packages/anodyne-generation" },
+    { name = "anodyne-llm", editable = "packages/anodyne-llm" },
+    { name = "anodyne-storage", editable = "packages/anodyne-storage" },
+    { name = "anodyne-text", editable = "packages/anodyne-text" },
     { name = "pyarrow", specifier = ">=17" },
     { name = "ray", specifier = ">=2.35" },
 ]
@@ -385,6 +396,23 @@ requires-dist = [
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9" },
+]
+
+[[package]]
+name = "anodyne-text"
+version = "0.1.0"
+source = { editable = "packages/anodyne-text" }
+dependencies = [
+    { name = "anodyne-core" },
+    { name = "anodyne-dataset" },
+    { name = "pyarrow" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anodyne-core", editable = "packages/anodyne-core" },
+    { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "pyarrow", specifier = ">=17" },
 ]
 
 [[package]]
@@ -1026,6 +1054,7 @@ dependencies = [
     { name = "anodyne-compute" },
     { name = "anodyne-core" },
     { name = "anodyne-dataset" },
+    { name = "anodyne-llm" },
     { name = "anodyne-storage" },
     { name = "anodyne-workflows" },
     { name = "pydantic-settings" },
@@ -1038,6 +1067,7 @@ requires-dist = [
     { name = "anodyne-compute", editable = "packages/anodyne-compute" },
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "anodyne-llm", editable = "packages/anodyne-llm" },
     { name = "anodyne-storage", editable = "packages/anodyne-storage" },
     { name = "anodyne-workflows", editable = "packages/anodyne-workflows" },
     { name = "pydantic-settings", specifier = ">=2.4" },

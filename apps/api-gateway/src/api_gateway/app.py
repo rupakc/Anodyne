@@ -55,6 +55,7 @@ class CreateDatasetRequest(BaseModel):
     # "description" (default, C0) proposes a schema via the LLM; "sample" creates a
     # draft with no schema yet -- POST /datasets/{id}/sample populates it.
     source: str = "description"
+    modality: Modality = Modality.TABULAR
 
 
 class UpdateDatasetRequest(BaseModel):
@@ -66,6 +67,10 @@ class UpdateDatasetRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     seed: int = 0
+    # Which of the tenant's registered models to generate text with; ignored
+    # for tabular specs. Defaults to the tenant's first registered model if
+    # omitted (mirrors `get_schema_proposer`'s existing default-model choice).
+    model_config_id: UUID | None = None
 
 
 class CreateFromTemplateRequest(BaseModel):
@@ -193,7 +198,7 @@ def create_app() -> FastAPI:
             tenant_id=ctx.tenant_id,
             name=body.name,
             description=body.description,
-            modality=Modality.TABULAR,
+            modality=body.modality,
             source="description",
             fields=fields,
             target_rows=body.target_rows,
@@ -310,6 +315,7 @@ def create_app() -> FastAPI:
         ctx: TenantContext = Depends(deps.require("datasets:write")),
         repo: DatasetRepository = Depends(deps.get_dataset_repo),
         client: Client = Depends(deps.get_temporal_client),
+        registry: ModelRegistry = Depends(deps.get_model_registry),
     ) -> dict[str, object]:
         spec = await repo.get_spec(ctx.tenant_id, dataset_id)
         if spec is None:
@@ -319,6 +325,27 @@ def create_app() -> FastAPI:
             # after creation (creation itself already rejects an empty
             # proposed schema -- see `create_dataset`).
             raise HTTPException(400, "dataset has no fields; edit the schema before generating")
+
+        model_config_id: str | None = None
+        if spec.modality == Modality.TEXT:
+            # Text generation calls the tenant's registered LLM, so a model
+            # must be resolved before starting the workflow: an explicit
+            # `model_config_id` (validated as the tenant's own), else the
+            # tenant's first registered model (mirrors `get_schema_proposer`'s
+            # existing default-model choice).
+            if body.model_config_id is not None:
+                cfg = await registry.get(ctx.tenant_id, body.model_config_id)
+                if cfg is None:
+                    raise HTTPException(400, "model_config_id not found for this tenant")
+            else:
+                configs = await registry.list(ctx.tenant_id)
+                if not configs:
+                    raise HTTPException(
+                        400, "no model configured for this tenant; register one first"
+                    )
+                cfg = configs[0]
+            model_config_id = str(cfg.id)
+
         job = GenerationJob(id=uuid4(), tenant_id=ctx.tenant_id, dataset_id=dataset_id)
         # C0 does schema review *before* generate is called (the UI reviews
         # the proposed schema, then calls this route), so there is no
@@ -338,7 +365,9 @@ def create_app() -> FastAPI:
                 tenant_id=str(ctx.tenant_id),
                 target_rows=spec.target_rows,
                 seed=body.seed,
+                modality=spec.modality.value,
                 method=method,
+                model_config_id=model_config_id,
             ),
             id=f"gen-{job.id}",
             task_queue="generation",

@@ -222,3 +222,49 @@ without any external provider credentials.
 ```bash
 make down   # stops containers and removes volumes
 ```
+
+## 8. Playwright e2e (`@e2e`, generation happy path)
+
+`apps/web/e2e/generate.spec.ts` drives the full local stack in a real
+browser: sign in as the demo user via Keycloak's hosted login form, create a
+dataset from a description, review/accept the proposed schema, generate,
+wait for the job to succeed, and download the resulting Parquet artifact. It
+is deliberately **not** part of the `pnpm --dir apps/web test` (vitest) unit
+lane — vitest only globs `__tests__/**/*.test.{ts,tsx}` (see
+`apps/web/vitest.config.mts`), and `apps/web/playwright.config.ts` has no
+`webServer` block, so nothing here starts automatically. Run it by hand (or
+from a dedicated CI job), in this order:
+
+```bash
+# 1-2: backbone + migrate/seed (steps 1-2 above)
+make up
+until curl -sf http://localhost:8080/realms/anodyne/.well-known/openid-configuration >/dev/null; do sleep 2; done
+make migrate
+make seed
+
+# 3: register an Ollama model for the demo tenant — POST /datasets 400s with
+# "no model configured for this tenant" otherwise (the schema proposer uses
+# the tenant's first registered ModelConfig; see
+# apps/api-gateway/src/api_gateway/deps.py:get_schema_proposer). Get a token
+# and register the local Ollama model as in step 6's "Offline path" above:
+docker compose -f infra/docker/docker-compose.yml exec ollama ollama pull llama3
+TOKEN=$(curl -s -X POST http://localhost:8080/realms/anodyne/protocol/openid-connect/token \
+  -H 'Content-Type: application/x-www-form-urlencoded' \
+  -d grant_type=password -d client_id=anodyne -d client_secret=dev-only-anodyne-client-secret \
+  -d username=demo@anodyne.dev -d password=demo -d scope=openid | jq -r .access_token)
+curl -s -X POST http://localhost:8000/models -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"llama3-local","provider":"ollama","model":"llama3","api_base":"http://localhost:11434"}'
+
+# 4: run the app processes (api-gateway + generation-worker + web, port 3000)
+make dev
+
+# 5: one-time browser install, then run the suite
+pnpm --dir apps/web exec playwright install chromium
+pnpm --dir apps/web test:e2e
+```
+
+The demo user's credentials (`demo@anodyne.dev` / `demo`) come from
+`infra/docker/keycloak/anodyne-realm.json`. Generation runs against the real
+Temporal workflow + Ray, so the suite's per-test timeout is generous (10
+minutes) to absorb a cold Ollama model load.

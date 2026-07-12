@@ -20,6 +20,7 @@ from api_gateway import deps
 from api_gateway.app import create_app
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
+from starlette.websockets import WebSocketDisconnect
 
 
 def _ctx(role: Role, tenant_id: UUID) -> TenantContext:
@@ -320,6 +321,7 @@ async def test_download_version_returns_presigned_url(wired):  # type: ignore[no
 def test_ws_stream_requires_auth() -> None:
     app = create_app()
     app.dependency_overrides[deps.get_redis] = lambda: _FakeRedis()
+    app.dependency_overrides[deps.get_dataset_repo] = lambda: _FakeDatasetRepository()
     client = TestClient(app)
     with pytest.raises(Exception):  # noqa: B017 - starlette raises WebSocketDenialResponse
         with client.websocket_connect(f"/jobs/{uuid4()}/stream"):
@@ -343,7 +345,35 @@ def test_ws_stream_rejects_viewer_without_write_needed_read_ok() -> None:
     )
     app.dependency_overrides[deps.get_tenant_context] = lambda: ctx
     app.dependency_overrides[deps.get_redis] = lambda: _FakeRedis()
+    app.dependency_overrides[deps.get_dataset_repo] = lambda: _FakeDatasetRepository()
     client = TestClient(app)
     with pytest.raises(Exception):  # noqa: B017 - starlette raises WebSocketDenialResponse
         with client.websocket_connect(f"/jobs/{uuid4()}/stream"):
             pass
+
+
+def test_ws_stream_rejects_another_tenants_job() -> None:
+    # Regression test: `require("datasets:read")` only checks the caller's
+    # role, not whether this specific job belongs to their tenant. Without
+    # the ownership check, any tenant with read access could stream any
+    # other tenant's job progress by guessing/enumerating job ids.
+    app = create_app()
+    owner_tid, other_tid = uuid4(), uuid4()
+    job_id = uuid4()
+    repo = _FakeDatasetRepository()
+    repo.jobs[job_id] = GenerationJob(id=job_id, tenant_id=owner_tid, dataset_id=uuid4())
+
+    app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.MEMBER, other_tid)
+    app.dependency_overrides[deps.get_dataset_repo] = lambda: repo
+    app.dependency_overrides[deps.get_redis] = lambda: _FakeRedis()
+    client = TestClient(app)
+
+    with client.websocket_connect(f"/jobs/{job_id}/stream") as ws:
+        with pytest.raises(WebSocketDisconnect) as exc_info:
+            ws.receive_text()
+        assert exc_info.value.code == 4404
+
+    # The job's own tenant can still stream it (no false-positive rejection).
+    app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.MEMBER, owner_tid)
+    with client.websocket_connect(f"/jobs/{job_id}/stream"):
+        pass  # connects and stays open -- no immediate close

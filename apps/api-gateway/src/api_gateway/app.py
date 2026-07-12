@@ -232,9 +232,19 @@ def create_app() -> FastAPI:
         websocket: WebSocket,
         job_id: UUID,
         ctx: TenantContext = Depends(deps.require("datasets:read")),
+        repo: DatasetRepository = Depends(deps.get_dataset_repo),
         redis_client: RedisLike = Depends(deps.get_redis),
     ) -> None:
         await websocket.accept()
+        # `require("datasets:read")` only checks the caller's role -- it says
+        # nothing about whether THIS job belongs to their tenant (unlike
+        # `GET /jobs/{id}`, which 404s via `repo.get_job(ctx.tenant_id, ...)`).
+        # Without this check, any tenant with read access could stream any
+        # other tenant's job progress by guessing/enumerating job ids.
+        job = await repo.get_job(ctx.tenant_id, job_id)
+        if job is None:
+            await websocket.close(code=4404, reason="job not found")
+            return
         channel = f"job:{job_id}"
         pubsub = redis_client.pubsub()
         await pubsub.subscribe(channel)

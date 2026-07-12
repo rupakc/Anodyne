@@ -18,8 +18,8 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from anodyne_dataset.models import DatasetSpec, DatasetVersion, GenerationJob
-from anodyne_dataset.ports import DatasetRepository
+from anodyne_dataset.models import DatasetSpec, DatasetVersion, GenerationJob, Profile
+from anodyne_dataset.ports import DatasetRepository, ProfileRepository
 from anodyne_workflows.workflow import GenerationWorkflow
 from generation_worker import main
 from generation_worker.main import WorkerDeps, build_worker
@@ -33,8 +33,13 @@ EXPECTED_ACTIVITY_NAMES = {
 }
 
 
-class _FakeDatasetRepository(DatasetRepository):
+class _FakeDatasetRepository(DatasetRepository, ProfileRepository):
     async def create_spec(self, spec: DatasetSpec) -> None: ...
+
+    async def save_profile(self, profile: Profile) -> None: ...
+
+    async def get_profile(self, tenant_id: uuid.UUID, dataset_id: uuid.UUID) -> Profile | None:
+        return None
 
     async def get_spec(self, tenant_id: uuid.UUID, dataset_id: uuid.UUID) -> DatasetSpec | None:
         return None
@@ -91,6 +96,30 @@ def test_build_worker_registers_workflow_and_all_five_activities_on_generation_q
     assert worker.workflows == [GenerationWorkflow]
     activity_names = {a.__temporal_activity_definition.name for a in worker.activities}
     assert activity_names == EXPECTED_ACTIVITY_NAMES
+
+
+def test_build_worker_wires_profile_repo_and_tabular_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from anodyne_workflows import activities as activities_module
+
+    monkeypatch.setattr(main, "Worker", _FakeWorker)
+    repo = _FakeDatasetRepository()
+    deps = WorkerDeps(
+        repo=repo,
+        s3_bucket="test-bucket",
+        s3_client=None,
+        profile_repo=repo,
+        ctgan_epochs=7,
+        enable_sdv=True,
+    )
+
+    build_worker(_FakeClient(), deps)  # type: ignore[arg-type]
+
+    ctx = activities_module._context()  # noqa: SLF001
+    assert ctx.profile_repo is repo
+    assert ctx.ctgan_epochs == 7
+    assert ctx.enable_sdv is True
 
 
 def test_registered_workflows_and_activities_match_task_queue_constant() -> None:

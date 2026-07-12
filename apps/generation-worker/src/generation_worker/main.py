@@ -19,7 +19,7 @@ from typing import Any
 import boto3  # type: ignore[import-untyped]
 import redis.asyncio as redis
 from anodyne_compute import ray_init
-from anodyne_dataset.ports import DatasetRepository
+from anodyne_dataset.ports import DatasetRepository, ProfileRepository
 from anodyne_storage.dataset_repo import SqlDatasetRepository
 from anodyne_storage.db import make_engine
 from anodyne_workflows.activities import (
@@ -66,6 +66,10 @@ class WorkerDeps:
     s3_bucket: str
     s3_client: Any
     publisher: ProgressPublisher | None = None
+    # From-sample tabular synthesis (see anodyne_workflows.activities.ActivityContext).
+    profile_repo: ProfileRepository | None = None
+    ctgan_epochs: int = 100
+    enable_sdv: bool = False
 
 
 def registered_workflows() -> list[type]:
@@ -84,6 +88,9 @@ def build_worker(client: Client, deps: WorkerDeps) -> Worker:
             s3_bucket=deps.s3_bucket,
             s3_client=deps.s3_client,
             publisher=deps.publisher,
+            profile_repo=deps.profile_repo,
+            ctgan_epochs=deps.ctgan_epochs,
+            enable_sdv=deps.enable_sdv,
         )
     )
     return Worker(
@@ -107,7 +114,15 @@ async def main() -> None:
     worker = build_worker(
         client,
         WorkerDeps(
-            repo=repo, s3_bucket=settings.s3_bucket, s3_client=s3_client, publisher=publisher
+            repo=repo,
+            s3_bucket=settings.s3_bucket,
+            s3_client=s3_client,
+            publisher=publisher,
+            # `SqlDatasetRepository` implements both `DatasetRepository` and
+            # `ProfileRepository` -- the same instance serves both roles.
+            profile_repo=repo,
+            ctgan_epochs=settings.tabular_ctgan_epochs,
+            enable_sdv=settings.tabular_enable_sdv,
         ),
     )
     await worker.run()

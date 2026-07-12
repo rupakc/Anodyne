@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://anodyne_app:anodyne_app@localhost:5432/anodyne"
     s3_bucket: str = "anodyne"
     secret_key: str = ""  # base64 Fernet key; required in prod
+    # From-sample tabular synthesis (see anodyne_tabular). CTGAN/TVAE epochs are kept
+    # small by default -- tune upward for higher fidelity at the cost of fit time.
+    tabular_ctgan_epochs: int = 100
+    # SDV is BSL 1.1 (separately licensed) -- opt-in per architecture decision; a tenant
+    # must also request `directives["synthesizer"] = "sdv"` for it to actually be used.
+    tabular_enable_sdv: bool = False
 
 
 def get_settings() -> Settings:

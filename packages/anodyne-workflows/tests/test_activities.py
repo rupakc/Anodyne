@@ -2,7 +2,12 @@
 
 `plan_shards` is exercised as a plain async function (it's pure). `set_status`
 is exercised via the context-injection mechanism (`configure_activities`) with
-fake `DatasetRepository`/`ObjectStore` implementations.
+a fake `DatasetRepository` (no object-store access needed). `assemble_and_upload`
+is exercised against a real `S3ObjectStore` backed by a moto-mocked S3 bucket
+-- not a fake -- specifically to catch tenant-prefix bugs like the one this
+suite regression-tests (BLOCKER 2: worker wrote under a nil-namespace prefix
+while the gateway presigned under the real tenant prefix, so keys never
+matched. See `anodyne_workflows.activities.ActivityContext` docstring).
 """
 
 from __future__ import annotations
@@ -10,10 +15,13 @@ from __future__ import annotations
 import io
 import json
 import uuid
+from collections.abc import Generator
+from typing import Any
 
+import boto3  # type: ignore[import-untyped]
 import pyarrow as pa  # type: ignore[import-untyped]
 import pyarrow.parquet as pq  # type: ignore[import-untyped]
-from anodyne_core.ports import ObjectStore
+import pytest
 from anodyne_dataset.models import DatasetSpec, DatasetVersion, GenerationJob, JobStatus
 from anodyne_dataset.ports import DatasetRepository
 from anodyne_workflows.activities import (
@@ -25,23 +33,17 @@ from anodyne_workflows.activities import (
     set_status,
 )
 from anodyne_workflows.workflow import GenerationInput
+from moto import mock_aws
+
+_BUCKET = "test-bucket"
 
 
-class _FakeObjectStore(ObjectStore):
-    def __init__(self) -> None:
-        self.data: dict[str, bytes] = {}
-
-    async def put(self, key: str, data: bytes) -> None:
-        self.data[key] = data
-
-    async def get(self, key: str) -> bytes:
-        return self.data.get(key, b"")
-
-    async def presigned_url(self, key: str, expires: int = 3600) -> str:
-        return f"https://example.test/{key}"
-
-    async def list(self, prefix: str) -> list[str]:
-        return []
+@pytest.fixture
+def s3_client() -> Generator[Any, None, None]:
+    with mock_aws():
+        c = boto3.client("s3", region_name="us-east-1")
+        c.create_bucket(Bucket=_BUCKET)
+        yield c
 
 
 class _FakePublisher:
@@ -106,7 +108,7 @@ async def test_set_status_preserves_workflow_id_and_message() -> None:
         message="created by gateway",
         workflow_id="wf-x",
     )
-    configure_activities(ActivityContext(repo=repo, object_store=_FakeObjectStore()))
+    configure_activities(ActivityContext(repo=repo, s3_bucket=_BUCKET, s3_client=None))
 
     await set_status(_input(job_id, tenant_id, dataset_id), "running", 0.5)
 
@@ -127,7 +129,7 @@ async def test_set_status_updates_message_when_passed() -> None:
         workflow_id="wf-x",
         message="old",
     )
-    configure_activities(ActivityContext(repo=repo, object_store=_FakeObjectStore()))
+    configure_activities(ActivityContext(repo=repo, s3_bucket=_BUCKET, s3_client=None))
 
     await set_status(_input(job_id, tenant_id, dataset_id), "failed", 0.4, message="boom")
 
@@ -143,7 +145,7 @@ async def test_set_status_publishes_to_per_job_channel() -> None:
     repo.jobs[job_id] = GenerationJob(id=job_id, tenant_id=tenant_id, dataset_id=dataset_id)
     publisher = _FakePublisher()
     configure_activities(
-        ActivityContext(repo=repo, object_store=_FakeObjectStore(), publisher=publisher)
+        ActivityContext(repo=repo, s3_bucket=_BUCKET, s3_client=None, publisher=publisher)
     )
 
     await set_status(_input(job_id, tenant_id, dataset_id), "running", 0.5)
@@ -159,33 +161,40 @@ async def test_set_status_publishes_to_per_job_channel() -> None:
     assert payload["progress"] == 0.5
 
 
-async def test_assemble_and_upload_returns_durable_object_key() -> None:
+async def test_assemble_and_upload_returns_tenant_relative_key(s3_client: Any) -> None:
     job_id, tenant_id, dataset_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     inp = _input(job_id, tenant_id, dataset_id)
-    store = _FakeObjectStore()
     table = pa.table({"x": [1, 2, 3]})
     buf = io.BytesIO()
     pq.write_table(table, buf)
-    shard_key = f"{inp.tenant_id}/datasets/{inp.dataset_id}/{inp.job_id}/shard-0.parquet"
-    store.data[shard_key] = buf.getvalue()
-    configure_activities(ActivityContext(repo=_FakeDatasetRepository(), object_store=store))
+    # Tenant-relative key, as `generate_shards` would produce it -- physically
+    # written under the tenant prefix (mirrors what `S3ObjectStore.put` does).
+    shard_key = f"datasets/{inp.dataset_id}/{inp.job_id}/shard-0.parquet"
+    s3_client.put_object(Bucket=_BUCKET, Key=f"{tenant_id}/{shard_key}", Body=buf.getvalue())
+    configure_activities(
+        ActivityContext(repo=_FakeDatasetRepository(), s3_bucket=_BUCKET, s3_client=s3_client)
+    )
 
     artifact_key = await assemble_and_upload(inp, [shard_key])
 
-    expected_key = f"{inp.tenant_id}/datasets/{inp.dataset_id}/{inp.job_id}/artifact.parquet"
+    expected_key = f"datasets/{inp.dataset_id}/{inp.job_id}/artifact.parquet"
     assert artifact_key == expected_key
     assert not artifact_key.startswith("http://")
     assert not artifact_key.startswith("https://")
-    # Uploaded under that same durable key -- not just returned as a string.
-    assert artifact_key in store.data
+    # Regression check for BLOCKER 2: the artifact must be physically stored
+    # under exactly one tenant prefix -- `{tenant}/{key}` -- not double-nested
+    # under a separate worker-side namespace the gateway's presigner never
+    # looks under.
+    stored = s3_client.get_object(Bucket=_BUCKET, Key=f"{tenant_id}/{expected_key}")
+    assert pq.read_table(io.BytesIO(stored["Body"].read())).num_rows == 3
 
 
 async def test_register_version_persists_artifact_key_not_url() -> None:
     job_id, tenant_id, dataset_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     inp = _input(job_id, tenant_id, dataset_id)
     repo = _FakeDatasetRepository()
-    configure_activities(ActivityContext(repo=repo, object_store=_FakeObjectStore()))
-    artifact_key = f"{inp.tenant_id}/datasets/{inp.dataset_id}/{inp.job_id}/artifact.parquet"
+    configure_activities(ActivityContext(repo=repo, s3_bucket=_BUCKET, s3_client=None))
+    artifact_key = f"datasets/{inp.dataset_id}/{inp.job_id}/artifact.parquet"
 
     await register_version(inp, artifact_key, rows=10)
 
@@ -193,6 +202,9 @@ async def test_register_version_persists_artifact_key_not_url() -> None:
     stored = repo.versions[0]
     assert stored.artifact_uri == artifact_key
     assert not stored.artifact_uri.startswith("http")
+    # Tenant-relative: the gateway's per-tenant `S3ObjectStore` will prepend
+    # `{tenant_id}/` itself when presigning -- this must not repeat it.
+    assert not stored.artifact_uri.startswith(str(tenant_id))
 
 
 async def test_plan_shards_covers_target_rows_in_contiguous_chunks() -> None:

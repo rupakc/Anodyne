@@ -13,7 +13,7 @@ import io
 import json
 import uuid
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 
 import pyarrow as pa  # type: ignore[import-untyped]
 import pyarrow.parquet as pq  # type: ignore[import-untyped]
@@ -22,6 +22,7 @@ from anodyne_compute import remote_generate_shard
 from anodyne_core.ports import ObjectStore
 from anodyne_dataset.models import DatasetVersion, GenerationJob, JobStatus
 from anodyne_dataset.ports import DatasetRepository
+from anodyne_storage.objectstore import S3ObjectStore
 from temporalio import activity
 
 from anodyne_workflows.workflow import GenerationInput
@@ -39,8 +40,23 @@ class ProgressPublisher(Protocol):
 
 @dataclass
 class ActivityContext:
+    """Infra bound to these activities by the worker at startup.
+
+    Carries the object-store *bucket name* and a boto3 client rather than one
+    pre-built `ObjectStore` -- each activity that touches storage builds its
+    own tenant-scoped `S3ObjectStore` via `_object_store(inp)`. A single
+    pre-built store (constructed once, tenant-agnostic) is how the
+    worker/gateway used to disagree on key layout: the worker's store
+    prepended a fixed nil-UUID namespace while the gateway's presigner
+    prepends the *real* tenant, so a key written at `{nil}/{tenant}/...`
+    could never be found at `{tenant}/{tenant}/...`. Building the store
+    per-activity from `inp.tenant_id` keeps both sides using the exact same
+    prefix.
+    """
+
     repo: DatasetRepository
-    object_store: ObjectStore
+    s3_bucket: str
+    s3_client: Any
     publisher: ProgressPublisher | None = None
 
 
@@ -61,12 +77,19 @@ def _context() -> ActivityContext:
     return _ctx
 
 
+def _object_store(inp: GenerationInput) -> ObjectStore:
+    ctx = _context()
+    return S3ObjectStore(ctx.s3_bucket, uuid.UUID(inp.tenant_id), client=ctx.s3_client)
+
+
 def _shard_key(inp: GenerationInput, index: int) -> str:
-    return f"{inp.tenant_id}/datasets/{inp.dataset_id}/{inp.job_id}/shard-{index}.parquet"
+    # Tenant-relative: `S3ObjectStore` prepends `{tenant_id}/` itself, so this
+    # key must NOT repeat it (see `ActivityContext` docstring above).
+    return f"datasets/{inp.dataset_id}/{inp.job_id}/shard-{index}.parquet"
 
 
 def _artifact_key(inp: GenerationInput) -> str:
-    return f"{inp.tenant_id}/datasets/{inp.dataset_id}/{inp.job_id}/artifact.parquet"
+    return f"datasets/{inp.dataset_id}/{inp.job_id}/artifact.parquet"
 
 
 @activity.defn(name="plan_shards")
@@ -87,6 +110,7 @@ async def plan_shards(inp: GenerationInput) -> list[list[int]]:
 async def generate_shards(inp: GenerationInput, shards: list[list[int]]) -> list[str]:
     """Generate each shard on Ray and upload it to the object store; return its keys."""
     ctx = _context()
+    store = _object_store(inp)
     spec = await ctx.repo.get_spec(uuid.UUID(inp.tenant_id), uuid.UUID(inp.dataset_id))
     if spec is None:
         raise ValueError(f"dataset {inp.dataset_id} not found for tenant {inp.tenant_id}")
@@ -96,7 +120,7 @@ async def generate_shards(inp: GenerationInput, shards: list[list[int]]) -> list
         ref = remote_generate_shard.remote(spec, start, count, inp.seed + i)
         data: bytes = await asyncio.to_thread(ray.get, ref)
         key = _shard_key(inp, i)
-        await ctx.object_store.put(key, data)
+        await store.put(key, data)
         keys.append(key)
     return keys
 
@@ -109,10 +133,10 @@ async def assemble_and_upload(inp: GenerationInput, keys: list[str]) -> str:
     what gets persisted as `DatasetVersion.artifact_uri`, and presigning only
     happens later, at download time, in the gateway.
     """
-    ctx = _context()
+    store = _object_store(inp)
     tables = []
     for key in keys:
-        data = await ctx.object_store.get(key)
+        data = await store.get(key)
         tables.append(pq.read_table(io.BytesIO(data)))
 
     table = pa.concat_tables(tables) if tables else pa.table({})
@@ -120,7 +144,7 @@ async def assemble_and_upload(inp: GenerationInput, keys: list[str]) -> str:
     pq.write_table(table, buf)
 
     artifact_key = _artifact_key(inp)
-    await ctx.object_store.put(artifact_key, buf.getvalue())
+    await store.put(artifact_key, buf.getvalue())
     return artifact_key
 
 

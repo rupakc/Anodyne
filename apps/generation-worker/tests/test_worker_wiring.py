@@ -18,7 +18,6 @@ from collections.abc import Callable
 from typing import Any
 
 import pytest
-from anodyne_core.ports import ObjectStore
 from anodyne_dataset.models import DatasetSpec, DatasetVersion, GenerationJob
 from anodyne_dataset.ports import DatasetRepository
 from anodyne_workflows.workflow import GenerationWorkflow
@@ -32,19 +31,6 @@ EXPECTED_ACTIVITY_NAMES = {
     "register_version",
     "set_status",
 }
-
-
-class _FakeObjectStore(ObjectStore):
-    async def put(self, key: str, data: bytes) -> None: ...
-
-    async def get(self, key: str) -> bytes:
-        return b""
-
-    async def presigned_url(self, key: str, expires: int = 3600) -> str:
-        return f"https://example.test/{key}"
-
-    async def list(self, prefix: str) -> list[str]:
-        return []
 
 
 class _FakeDatasetRepository(DatasetRepository):
@@ -96,7 +82,7 @@ def test_build_worker_registers_workflow_and_all_five_activities_on_generation_q
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(main, "Worker", _FakeWorker)
-    deps = WorkerDeps(repo=_FakeDatasetRepository(), object_store=_FakeObjectStore())
+    deps = WorkerDeps(repo=_FakeDatasetRepository(), s3_bucket="test-bucket", s3_client=None)
 
     worker = build_worker(_FakeClient(), deps)  # type: ignore[arg-type]
 

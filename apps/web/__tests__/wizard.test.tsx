@@ -17,6 +17,7 @@ vi.mock("next/navigation", () => ({
 
 import { Wizard } from "@/app/app/new/wizard";
 import type { ApiClient, DatasetSpec, DatasetTemplate, GenerationJob } from "@/lib/api";
+import { baseMockApi } from "./mock-api";
 
 const PROPOSED_SPEC: DatasetSpec = {
   id: "dataset-1",
@@ -66,22 +67,17 @@ const SPEC_FROM_TEMPLATE: DatasetSpec = {
 };
 
 function makeMockApi(overrides: Partial<ApiClient> = {}): ApiClient {
-  return {
+  return baseMockApi({
     createDataset: vi.fn().mockResolvedValue(PROPOSED_SPEC),
-    listDatasets: vi.fn(),
-    getDataset: vi.fn(),
     updateDataset: vi.fn().mockImplementation(async (id: string, patch) => ({
       ...PROPOSED_SPEC,
       ...patch,
     })),
     generate: vi.fn().mockResolvedValue(GENERATED_JOB),
-    getJob: vi.fn(),
-    listVersions: vi.fn(),
-    downloadUrl: vi.fn(),
     listTemplates: vi.fn().mockResolvedValue([CUSTOMERS_TEMPLATE]),
     createFromTemplate: vi.fn().mockResolvedValue(SPEC_FROM_TEMPLATE),
     ...overrides,
-  };
+  });
 }
 
 async function fillDescribeStep(user: ReturnType<typeof userEvent.setup>) {

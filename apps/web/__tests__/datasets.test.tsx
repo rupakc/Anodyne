@@ -9,21 +9,15 @@ afterEach(cleanup);
 import { DatasetList } from "@/app/app/datasets/dataset-list";
 import { DatasetVersions } from "@/app/app/datasets/[id]/dataset-versions";
 import type { ApiClient, DatasetSpec, DatasetVersion } from "@/lib/api";
+import { baseMockApi } from "./mock-api";
 
 function makeMockApi(overrides: Partial<ApiClient> = {}): ApiClient {
-  return {
-    createDataset: vi.fn(),
+  return baseMockApi({
     listDatasets: vi.fn().mockResolvedValue([]),
-    getDataset: vi.fn(),
-    updateDataset: vi.fn(),
-    generate: vi.fn(),
-    getJob: vi.fn(),
     listVersions: vi.fn().mockResolvedValue([]),
-    downloadUrl: vi.fn(),
     listTemplates: vi.fn().mockResolvedValue([]),
-    createFromTemplate: vi.fn(),
     ...overrides,
-  };
+  });
 }
 
 const DATASETS: DatasetSpec[] = [

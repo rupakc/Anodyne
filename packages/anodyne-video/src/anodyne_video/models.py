@@ -53,7 +53,6 @@ class VideoManifestItem(BaseModel):
     """One row of a video dataset's manifest -- metadata only, no raw bytes."""
 
     index: int
-    object_key: str
     prompt: str
     duration_seconds: float
     width: int
@@ -64,6 +63,10 @@ class VideoManifestItem(BaseModel):
     model: str
     content_type: str = "video/mp4"
     byte_size: int
+    # Filled in by the Temporal activity once the clip is uploaded to the
+    # object store (the generator that produces this item is storage-agnostic
+    # -- see `anodyne_video.generator.VideoDatasetGenerator`).
+    object_key: str = ""
 
 
 class VideoManifest(BaseModel):

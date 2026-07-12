@@ -7,10 +7,14 @@ from uuid import UUID
 
 import jwt
 from anodyne_core.models import ModelConfig, TenantContext
-from anodyne_core.ports import AuthorizationPolicy, LLMProvider
+from anodyne_core.ports import AuthorizationPolicy, LLMProvider, SecretStore
+from anodyne_llm.registry import SqlModelRegistry
+from anodyne_storage.db import make_engine
+from anodyne_storage.secrets import FernetSecretStore
 from anodyne_tenancy.authz import RoleBasedPolicy
 from anodyne_tenancy.oidc import AuthError, TokenValidator
 from fastapi import Depends, Header, HTTPException
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from api_gateway.config import Settings, get_settings
 
@@ -76,10 +80,24 @@ def require(permission: str) -> Callable[..., TenantContext]:
     return _dep
 
 
+@lru_cache
+def _engine(database_url: str) -> AsyncEngine:
+    return make_engine(database_url)
+
+
+@lru_cache
+def _secret_store(secret_key: str) -> SecretStore:
+    return FernetSecretStore(secret_key.encode())
+
+
 # Overridden in tests; real wiring builds these from Settings + backbone.
 def get_llm_provider() -> LLMProvider:  # pragma: no cover - wired at runtime
     raise HTTPException(503, "LLM provider not configured")
 
 
-def get_model_registry() -> ModelRegistry:  # pragma: no cover - wired at runtime
-    raise HTTPException(503, "model registry not configured")
+def get_model_registry(settings: Settings = Depends(get_settings)) -> ModelRegistry:
+    """Real, DB-backed registry: SQL storage + Fernet-encrypted secret refs.
+
+    Overridden in tests via `app.dependency_overrides[get_model_registry]`.
+    """
+    return SqlModelRegistry(_engine(settings.database_url), _secret_store(settings.secret_key))

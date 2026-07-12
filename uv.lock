@@ -229,12 +229,14 @@ version = "0.1.0"
 source = { editable = "packages/anodyne-llm" }
 dependencies = [
     { name = "anodyne-core" },
+    { name = "anodyne-storage" },
     { name = "litellm" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "anodyne-core", editable = "packages/anodyne-core" },
+    { name = "anodyne-storage", editable = "packages/anodyne-storage" },
     { name = "litellm", specifier = ">=1.81" },
 ]
 

@@ -2,7 +2,7 @@
 name = "anodyne-llm"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["anodyne-core", "litellm>=1.81"]
+dependencies = ["anodyne-core", "anodyne-storage", "litellm>=1.81"]
 
 [build-system]
 requires = ["hatchling"]
@@ -10,3 +10,4 @@ build-backend = "hatchling.build"
 
 [tool.uv.sources]
 anodyne-core = { workspace = true }
+anodyne-storage = { workspace = true }

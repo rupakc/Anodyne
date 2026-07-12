@@ -28,6 +28,8 @@ from anodyne_storage.secrets import FernetSecretStore
 from anodyne_tabular.profiler import PandasSampleProfiler
 from anodyne_tenancy.authz import RoleBasedPolicy
 from anodyne_tenancy.oidc import AuthError, TokenValidator
+from anodyne_video.ports import VideoProviderRegistry
+from anodyne_video.registry import SqlVideoProviderRegistry
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.requests import HTTPConnection
@@ -143,6 +145,17 @@ def get_model_registry(settings: Settings = Depends(get_settings)) -> ModelRegis
     Overridden in tests via `app.dependency_overrides[get_model_registry]`.
     """
     return SqlModelRegistry(_engine(settings.database_url), _secret_store(settings.secret_key))
+
+
+def get_video_provider_registry(
+    settings: Settings = Depends(get_settings),
+) -> VideoProviderRegistry:
+    """Real, DB-backed `VideoProviderRegistry` (tenant video-provider configs).
+
+    Overridden in tests via `app.dependency_overrides[get_video_provider_registry]`.
+    """
+    engine = _engine(settings.database_url)
+    return SqlVideoProviderRegistry(engine, _secret_store(settings.secret_key))
 
 
 def get_dataset_repo(settings: Settings = Depends(get_settings)) -> DatasetRepository:

@@ -47,3 +47,19 @@ def test_member_can_write_but_not_delete_image_providers() -> None:
 
 def test_admin_can_delete_image_providers() -> None:
     assert RoleBasedPolicy().is_permitted(_ctx(Role.ADMIN), "image_providers:delete")
+
+
+def test_viewer_can_read_but_not_write_video_providers() -> None:
+    p = RoleBasedPolicy()
+    assert p.is_permitted(_ctx(Role.VIEWER), "video_providers:read")
+    assert not p.is_permitted(_ctx(Role.VIEWER), "video_providers:write")
+
+
+def test_member_can_write_but_not_delete_video_providers() -> None:
+    p = RoleBasedPolicy()
+    assert p.is_permitted(_ctx(Role.MEMBER), "video_providers:write")
+    assert not p.is_permitted(_ctx(Role.MEMBER), "video_providers:delete")
+
+
+def test_admin_can_delete_video_providers() -> None:
+    assert RoleBasedPolicy().is_permitted(_ctx(Role.ADMIN), "video_providers:delete")

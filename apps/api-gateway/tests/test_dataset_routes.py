@@ -348,6 +348,9 @@ async def test_generate_starts_workflow_and_requires_write(wired):  # type: igno
     assert inp.tenant_id == str(tid)
     assert inp.target_rows == 250
     assert inp.seed == 7
+    # Back-compat regression guard: a tabular dataset must still dispatch the
+    # tabular activity sequence (see GenerationWorkflow.run's modality branch).
+    assert inp.modality == "tabular"
 
     # viewer cannot start generation
     app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.VIEWER, tid)

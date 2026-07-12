@@ -55,6 +55,9 @@ class _FakeDatasetRepository(DatasetRepository):
     async def list_versions(self, tenant_id: UUID, dataset_id: UUID) -> list[DatasetVersion]:
         return []
 
+    async def get_version(self, tenant_id: UUID, version_id: UUID) -> DatasetVersion | None:
+        return None
+
 
 class _FakeHandle:
     def __init__(self, id: str) -> None:

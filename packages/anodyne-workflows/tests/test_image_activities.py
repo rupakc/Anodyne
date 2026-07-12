@@ -141,6 +141,9 @@ class _FakeDatasetRepository(DatasetRepository):
     async def list_versions(self, tenant_id: UUID, dataset_id: UUID) -> list[DatasetVersion]:
         return []
 
+    async def get_version(self, tenant_id: UUID, version_id: UUID) -> DatasetVersion | None:
+        return next((v for v in self.versions if v.id == version_id), None)
+
 
 def _image_spec(tenant_id: UUID, dataset_id: UUID) -> DatasetSpec:
     return DatasetSpec(

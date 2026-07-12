@@ -17,6 +17,7 @@ import pytest_asyncio
 from anodyne_dataset.models import (
     ColumnProfile,
     DatasetSpec,
+    DatasetVersion,
     FieldSpec,
     GenerationJob,
     Modality,
@@ -133,3 +134,22 @@ async def test_saving_a_profile_again_replaces_it(engine) -> None:  # type: igno
     got = await repo.get_profile(t, s.id)
     assert got is not None
     assert got.row_count == 999
+
+
+async def test_get_version_by_id_alone_is_tenant_isolated(engine) -> None:  # type: ignore[no-untyped-def]
+    """`get_version` (sub-system G: `POST /feedback` has no `dataset_id` in
+    its URL to scope `list_versions`) looks a version up by id alone, still
+    respecting tenant isolation."""
+    repo = SqlDatasetRepository(engine)
+    t1, t2 = uuid4(), uuid4()
+    s = _spec(t1)
+    await repo.create_spec(s)
+    version = DatasetVersion(id=uuid4(), tenant_id=t1, dataset_id=s.id, artifact_uri="k")
+    await repo.add_version(version)
+
+    got = await repo.get_version(t1, version.id)
+    assert got is not None
+    assert got.dataset_id == s.id
+
+    assert await repo.get_version(t2, version.id) is None  # RLS + explicit filter
+    assert await repo.get_version(t1, uuid4()) is None

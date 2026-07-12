@@ -63,3 +63,42 @@ async def test_tenant_isolation(engine) -> None:  # type: ignore[no-untyped-def]
     async with tenant_session(engine, t1) as s:
         rows = (await s.execute(text("SELECT id FROM tenants"))).all()
         assert len(rows) == 1
+
+
+async def test_tenant_isolation_hitl_tables(engine) -> None:  # type: ignore[no-untyped-def]
+    """Sub-system G's three new tables (`annotations`, `feedback`,
+    `review_tasks`) get the same per-tenant RLS policy as every other tenant
+    table -- verified the same way as `test_tenant_isolation` above."""
+    t1, t2 = uuid4(), uuid4()
+    dataset_id, version_id, review_id = uuid4(), uuid4(), uuid4()
+    async with tenant_session(engine, t1) as s:
+        await s.execute(
+            text(
+                "INSERT INTO annotations (id, tenant_id, dataset_id, version_id, author) "
+                "VALUES (:id, :tid, :did, :vid, 'u@x.io')"
+            ),
+            {"id": uuid4(), "tid": t1, "did": dataset_id, "vid": version_id},
+        )
+        await s.execute(
+            text(
+                "INSERT INTO feedback (id, tenant_id, target_type, target_id, author) "
+                "VALUES (:id, :tid, 'dataset_version', :target, 'u@x.io')"
+            ),
+            {"id": uuid4(), "tid": t1, "target": version_id},
+        )
+        await s.execute(
+            text(
+                "INSERT INTO review_tasks (id, tenant_id, kind, target_type, target_id) "
+                "VALUES (:id, :tid, 'schema_approval', 'dataset', :target)"
+            ),
+            {"id": review_id, "tid": t1, "target": dataset_id},
+        )
+        await s.commit()
+
+    for table in ("annotations", "feedback", "review_tasks"):
+        async with tenant_session(engine, t2) as s:
+            rows = (await s.execute(text(f"SELECT id FROM {table}"))).all()
+            assert rows == [], f"tenant 2 should not see tenant 1's {table} rows"
+        async with tenant_session(engine, t1) as s:
+            rows = (await s.execute(text(f"SELECT id FROM {table}"))).all()
+            assert len(rows) == 1

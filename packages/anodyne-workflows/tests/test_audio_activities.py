@@ -78,6 +78,11 @@ class _FakeRepo(DatasetRepository):
     ) -> list[DatasetVersion]:
         return []
 
+    async def get_version(
+        self, tenant_id: uuid.UUID, version_id: uuid.UUID
+    ) -> DatasetVersion | None:
+        return next((v for v in self.versions if v.id == version_id), None)
+
 
 @pytest.fixture
 def s3_client() -> Generator[Any, None, None]:

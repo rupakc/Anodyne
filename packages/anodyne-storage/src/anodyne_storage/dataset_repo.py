@@ -255,6 +255,22 @@ class SqlDatasetRepository(DatasetRepository, ProfileRepository, PerturbationRep
             )
             return [_version_from_row(r) for r in rows]
 
+    async def get_version(self, tenant_id: UUID, version_id: UUID) -> DatasetVersion | None:
+        async with tenant_session(self._engine, tenant_id) as s:
+            row = (
+                (
+                    await s.execute(
+                        select(dataset_versions).where(
+                            dataset_versions.c.id == version_id,
+                            dataset_versions.c.tenant_id == tenant_id,
+                        )
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            return _version_from_row(row) if row else None
+
     async def save_profile(self, profile: Profile) -> None:
         async with tenant_session(self._engine, profile.tenant_id) as s:
             values = {

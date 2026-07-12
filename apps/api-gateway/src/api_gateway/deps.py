@@ -24,6 +24,12 @@ from anodyne_evaluation.ports import EvaluationRepository
 from anodyne_evaluation.registry import SqlEvaluationRepository
 from anodyne_export.exporter import PyArrowExporter
 from anodyne_generation.proposer import LLMSchemaProposer
+from anodyne_hitl.ports import AnnotationRepository, FeedbackRepository, ReviewRepository
+from anodyne_hitl.registry import (
+    SqlAnnotationRepository,
+    SqlFeedbackRepository,
+    SqlReviewRepository,
+)
 from anodyne_image.registry import SqlImageProviderRegistry
 from anodyne_llm.adapter import LiteLLMProvider
 from anodyne_llm.registry import SqlModelRegistry
@@ -215,6 +221,30 @@ def get_evaluation_repo(settings: Settings = Depends(get_settings)) -> Evaluatio
     Overridden in tests via `app.dependency_overrides[get_evaluation_repo]`.
     """
     return SqlEvaluationRepository(_engine(settings.database_url))
+
+
+def get_annotation_repo(settings: Settings = Depends(get_settings)) -> AnnotationRepository:
+    """Real, DB-backed `AnnotationRepository` (row/record-level dataset-version annotations).
+
+    Overridden in tests via `app.dependency_overrides[get_annotation_repo]`.
+    """
+    return SqlAnnotationRepository(_engine(settings.database_url))
+
+
+def get_feedback_repo(settings: Settings = Depends(get_settings)) -> FeedbackRepository:
+    """Real, DB-backed `FeedbackRepository` (ratings/thumbs/expert overrides).
+
+    Overridden in tests via `app.dependency_overrides[get_feedback_repo]`.
+    """
+    return SqlFeedbackRepository(_engine(settings.database_url))
+
+
+def get_review_repo(settings: Settings = Depends(get_settings)) -> ReviewRepository:
+    """Real, DB-backed `ReviewRepository` (the generalized HITL review queue).
+
+    Overridden in tests via `app.dependency_overrides[get_review_repo]`.
+    """
+    return SqlReviewRepository(_engine(settings.database_url))
 
 
 def get_sample_profiler() -> SampleProfiler:

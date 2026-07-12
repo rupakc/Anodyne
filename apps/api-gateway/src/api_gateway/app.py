@@ -42,6 +42,7 @@ from api_gateway import deps
 from api_gateway.deps import ModelRegistry, RedisLike
 from api_gateway.evaluation_routes import build_router as build_evaluation_router
 from api_gateway.export_routes import router as export_router
+from api_gateway.hitl_routes import build_router as build_hitl_router
 from api_gateway.perturbation_routes import router as perturbation_router
 
 # Sample uploads are capped well below typical request-body limits so a single
@@ -709,5 +710,8 @@ def create_app() -> FastAPI:
 
     # Evaluation Engine (sub-system F) routes live in a focused module.
     app.include_router(build_evaluation_router())
+
+    # Human-in-the-Loop & Annotation (sub-system G) routes live in a focused module.
+    app.include_router(build_hitl_router())
 
     return app

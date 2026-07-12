@@ -237,6 +237,7 @@ source = { editable = "packages/anodyne-compute" }
 dependencies = [
     { name = "anodyne-dataset" },
     { name = "anodyne-generation" },
+    { name = "anodyne-image" },
     { name = "pyarrow" },
     { name = "ray" },
 ]
@@ -245,6 +246,7 @@ dependencies = [
 requires-dist = [
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
     { name = "anodyne-generation", editable = "packages/anodyne-generation" },
+    { name = "anodyne-image", editable = "packages/anodyne-image" },
     { name = "pyarrow", specifier = ">=17" },
     { name = "ray", specifier = ">=2.35" },
 ]
@@ -306,6 +308,7 @@ dependencies = [
     { name = "anodyne-storage" },
     { name = "httpx" },
     { name = "pyarrow" },
+    { name = "ray" },
 ]
 
 [package.metadata]
@@ -315,6 +318,7 @@ requires-dist = [
     { name = "anodyne-storage", editable = "packages/anodyne-storage" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pyarrow", specifier = ">=17" },
+    { name = "ray", specifier = ">=2.35" },
 ]
 
 [[package]]

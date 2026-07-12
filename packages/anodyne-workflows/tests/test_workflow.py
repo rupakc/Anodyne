@@ -1,5 +1,4 @@
 import uuid
-from typing import Any
 
 import pytest
 from anodyne_workflows.workflow import GenerationInput, GenerationWorkflow
@@ -64,38 +63,37 @@ async def test_workflow_runs_after_approval() -> None:
     assert calls == ["plan", "gen", "assemble", "register"]
 
 
-async def test_video_workflow_runs_video_activity_sequence_not_tabular() -> None:
-    """`modality="video"` must dispatch the video activities, never the tabular ones."""
+async def test_video_workflow_runs_shared_activity_sequence() -> None:
+    """A `modality="video"` job runs the *same* modality-agnostic activity
+    sequence as tabular: the workflow dispatches by activity NAME only, and the
+    per-modality behaviour lives behind those names in the modality registry
+    (exercised in `test_video_activities.py`). This is the converged design --
+    there are no separate `*_video_*` workflow activities. The workflow must
+    never inspect `modality` itself (keeps `workflow.py` import-free of modality
+    packages for Temporal determinism)."""
     calls: list[str] = []
-
-    @activity.defn(name="plan_video_items")
-    async def plan_video_items(inp: GenerationInput) -> list[list[int]]:
-        calls.append("plan_video")
-        return [[0, 2], [2, 1]]
-
-    @activity.defn(name="generate_video_items")
-    async def generate_video_items(
-        inp: GenerationInput, shards: list[list[int]]
-    ) -> list[dict[str, Any]]:
-        calls.append("gen_video")
-        return [{"index": 0}, {"index": 1}, {"index": 2}]
-
-    @activity.defn(name="assemble_video_manifest")
-    async def assemble_video_manifest(inp: GenerationInput, items: list[dict[str, Any]]) -> str:
-        calls.append("assemble_video")
-        return "datasets/d/j/manifest.json"
-
-    @activity.defn(name="register_video_version")
-    async def register_video_version(inp: GenerationInput, uri: str, rows: int) -> None:
-        calls.append("register_video")
-
-    @activity.defn(name="set_status")
-    async def set_status(inp: GenerationInput, status: str, progress: float) -> None: ...
 
     @activity.defn(name="plan_shards")
     async def plan_shards(inp: GenerationInput) -> list[list[int]]:
-        calls.append("plan_tabular")  # should never run for a video job
-        return [[0, 1]]
+        calls.append("plan")
+        return [[0, 2], [2, 1]]
+
+    @activity.defn(name="generate_shards")
+    async def generate_shards(inp: GenerationInput, shards: list[list[int]]) -> list[str]:
+        calls.append("gen")
+        return ["k0", "k1"]
+
+    @activity.defn(name="assemble_and_upload")
+    async def assemble_and_upload(inp: GenerationInput, keys: list[str]) -> str:
+        calls.append("assemble")
+        return "datasets/d/j/manifest.json"
+
+    @activity.defn(name="register_version")
+    async def register_version(inp: GenerationInput, uri: str, rows: int) -> None:
+        calls.append("register")
+
+    @activity.defn(name="set_status")
+    async def set_status(inp: GenerationInput, status: str, progress: float) -> None: ...
 
     async with await WorkflowEnvironment.start_time_skipping() as env:
         async with Worker(
@@ -103,12 +101,11 @@ async def test_video_workflow_runs_video_activity_sequence_not_tabular() -> None
             task_queue="gen-video",
             workflows=[GenerationWorkflow],
             activities=[
-                plan_video_items,
-                generate_video_items,
-                assemble_video_manifest,
-                register_video_version,
-                set_status,
                 plan_shards,
+                generate_shards,
+                assemble_and_upload,
+                register_version,
+                set_status,
             ],
         ):
             inp = GenerationInput(
@@ -125,7 +122,7 @@ async def test_video_workflow_runs_video_activity_sequence_not_tabular() -> None
             await handle.signal(GenerationWorkflow.approve_schema)
             uri = await handle.result()
     assert uri == "datasets/d/j/manifest.json"
-    assert calls == ["plan_video", "gen_video", "assemble_video", "register_video"]
+    assert calls == ["plan", "gen", "assemble", "register"]
 
 
 def test_generation_input_defaults_modality_to_tabular() -> None:

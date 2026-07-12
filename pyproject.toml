@@ -25,4 +25,10 @@ api-gateway = { workspace = true }
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["packages", "apps"]
-markers = ["integration: requires external services (Docker/Postgres)"]
+# importlib mode: monorepo has many `tests/` dirs with duplicate module basenames
+# (e.g. multiple test_models.py); the default `prepend` mode collides on them.
+addopts = "--import-mode=importlib"
+markers = [
+    "integration: requires external services (Docker/Postgres)",
+    "e2e: requires a running app + browser (Playwright)",
+]

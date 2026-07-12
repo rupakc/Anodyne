@@ -14,7 +14,15 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_asyncio
-from anodyne_dataset.models import DatasetSpec, FieldSpec, GenerationJob, Modality, SemanticType
+from anodyne_dataset.models import (
+    ColumnProfile,
+    DatasetSpec,
+    FieldSpec,
+    GenerationJob,
+    Modality,
+    Profile,
+    SemanticType,
+)
 from anodyne_storage.dataset_repo import SqlDatasetRepository
 from anodyne_storage.db import apply_rls, make_engine, metadata
 from sqlalchemy import text
@@ -78,3 +86,50 @@ async def test_job_roundtrip(engine) -> None:  # type: ignore[no-untyped-def]
     got = await repo.get_job(t, j.id)
     assert got is not None
     assert got.dataset_id == s.id
+
+
+def _profile(tid: UUID, dataset_id: UUID) -> Profile:
+    return Profile(
+        id=uuid4(),
+        tenant_id=tid,
+        dataset_id=dataset_id,
+        row_count=5,
+        columns=[ColumnProfile(name="age", semantic_type=SemanticType.INTEGER, min=0.0, max=9.0)],
+        correlations={"age": {"age": 1.0}},
+        sample_uri="datasets/x/sample/data.csv",
+        sample_filename="data.csv",
+    )
+
+
+async def test_profile_roundtrip_is_tenant_isolated(engine) -> None:  # type: ignore[no-untyped-def]
+    repo = SqlDatasetRepository(engine)
+    t1, t2 = uuid4(), uuid4()
+    s = _spec(t1)
+    await repo.create_spec(s)
+    profile = _profile(t1, s.id)
+
+    await repo.save_profile(profile)
+
+    got = await repo.get_profile(t1, s.id)
+    assert got is not None
+    assert got.sample_uri == profile.sample_uri
+    assert got.columns[0].name == "age"
+    assert got.correlations == {"age": {"age": 1.0}}
+    assert await repo.get_profile(t2, s.id) is None  # RLS + explicit filter
+
+
+async def test_saving_a_profile_again_replaces_it(engine) -> None:  # type: ignore[no-untyped-def]
+    repo = SqlDatasetRepository(engine)
+    t = uuid4()
+    s = _spec(t)
+    await repo.create_spec(s)
+    first = _profile(t, s.id)
+    await repo.save_profile(first)
+
+    second = _profile(t, s.id)
+    second.row_count = 999
+    await repo.save_profile(second)
+
+    got = await repo.get_profile(t, s.id)
+    assert got is not None
+    assert got.row_count == 999

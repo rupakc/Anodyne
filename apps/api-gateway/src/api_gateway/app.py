@@ -10,6 +10,7 @@ from anodyne_dataset.models import DatasetSpec, FieldSpec, GenerationJob, Modali
 from anodyne_dataset.ports import DatasetRepository, SchemaProposer
 from anodyne_generation.proposer import SchemaProposalError
 from anodyne_observability.logging import bind_request_context, configure_logging
+from anodyne_templates.catalog import build_dataset_spec, get_template, list_templates
 from anodyne_workflows.workflow import GenerationInput, GenerationWorkflow
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
@@ -38,10 +39,18 @@ class UpdateDatasetRequest(BaseModel):
     name: str | None = None
     target_rows: int | None = None
     fields: list[FieldSpec] | None = None
+    directives: dict[str, object] | None = None
 
 
 class GenerateRequest(BaseModel):
     seed: int = 0
+
+
+class CreateFromTemplateRequest(BaseModel):
+    template_key: str
+    name: str | None = None
+    target_rows: int | None = None
+    directives: dict[str, object] | None = None
 
 
 def create_app() -> FastAPI:
@@ -188,7 +197,34 @@ def create_app() -> FastAPI:
             spec.target_rows = body.target_rows
         if body.fields is not None:
             spec.fields = body.fields
+        if body.directives is not None:
+            spec.directives = body.directives
         await repo.update_spec(spec)
+        return spec.model_dump(mode="json")
+
+    @app.get("/templates")
+    async def get_templates(
+        ctx: TenantContext = Depends(deps.require("datasets:read")),
+    ) -> list[dict[str, object]]:
+        return [t.model_dump(mode="json") for t in list_templates()]
+
+    @app.post("/datasets/from-template", status_code=201)
+    async def create_dataset_from_template(
+        body: CreateFromTemplateRequest,
+        ctx: TenantContext = Depends(deps.require("datasets:write")),
+        repo: DatasetRepository = Depends(deps.get_dataset_repo),
+    ) -> dict[str, object]:
+        template = get_template(body.template_key)
+        if template is None:
+            raise HTTPException(404, f"unknown template: {body.template_key}")
+        spec = build_dataset_spec(
+            template,
+            tenant_id=ctx.tenant_id,
+            name=body.name,
+            target_rows=body.target_rows,
+            directives=body.directives,
+        )
+        await repo.create_spec(spec)
         return spec.model_dump(mode="json")
 
     @app.post("/datasets/{dataset_id}/generate", status_code=202)

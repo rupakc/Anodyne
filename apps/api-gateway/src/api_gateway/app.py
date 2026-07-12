@@ -192,6 +192,13 @@ def create_app() -> FastAPI:
         if spec is None:
             raise HTTPException(404, "dataset not found")
         job = GenerationJob(id=uuid4(), tenant_id=ctx.tenant_id, dataset_id=dataset_id)
+        # C0 does schema review *before* generate is called (the UI reviews
+        # the proposed schema, then calls this route), so there is no
+        # separate human step left to gate on here. Start the workflow
+        # already-approved via signal-with-start so it doesn't park at
+        # `awaiting_review` forever waiting for a signal nothing sends. The
+        # workflow's HITL gate itself stays intact for when real pre-generate
+        # review lands.
         handle = await client.start_workflow(
             GenerationWorkflow.run,
             GenerationInput(
@@ -203,6 +210,7 @@ def create_app() -> FastAPI:
             ),
             id=f"gen-{job.id}",
             task_queue="generation",
+            start_signal="approve_schema",
         )
         job.workflow_id = handle.id
         await repo.save_job(job)

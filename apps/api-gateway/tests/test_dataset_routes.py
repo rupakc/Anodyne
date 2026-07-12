@@ -81,9 +81,17 @@ class _FakeTemporalClient:
         self.calls: list[dict[str, Any]] = []
 
     async def start_workflow(  # type: ignore[no-untyped-def]
-        self, workflow, arg, *, id, task_queue
+        self, workflow, arg, *, id, task_queue, start_signal=None, **kwargs
     ) -> _FakeHandle:
-        self.calls.append({"workflow": workflow, "arg": arg, "id": id, "task_queue": task_queue})
+        self.calls.append(
+            {
+                "workflow": workflow,
+                "arg": arg,
+                "id": id,
+                "task_queue": task_queue,
+                "start_signal": start_signal,
+            }
+        )
         return _FakeHandle(id)
 
 
@@ -227,6 +235,10 @@ async def test_generate_starts_workflow_and_requires_write(wired):  # type: igno
     assert call["workflow"] is GenerationWorkflow.run
     assert call["id"] == f"gen-{job['id']}"
     assert call["task_queue"] == "generation"
+    # Auto-approved at start: C0 does schema review before generate is
+    # called, so nothing sends `approve_schema` later -- without this the
+    # workflow parks at `awaiting_review` forever.
+    assert call["start_signal"] == "approve_schema"
     inp = call["arg"]
     assert isinstance(inp, GenerationInput)
     assert inp.job_id == job["id"]

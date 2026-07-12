@@ -23,8 +23,10 @@ MinIO, Keycloak, **Temporal** (+ Temporal UI on 8088), **Ray head** (dashboard
 > **Port note:** `ray-head`'s internal Redis (6379) is **not** published to the
 > host — the generation-worker connects to Ray via the client port **10001**,
 > so the app `redis` service keeps host port **6379** with no clash. The
-> `config.py` defaults (`redis://localhost:6379/0`, `ray_address=""` for a local
-> Ray, `temporal_address=localhost:7233`) work out of the box for `make dev`.
+> `config.py` defaults work out of the box for `make dev` once `make up` is
+> running: `redis://localhost:6379/0`, `temporal_address=localhost:7233`, and
+> `ray_address=ray://localhost:10001` (the `ray-head` container). Set
+> `ANODYNE_RAY_ADDRESS=""` to run an embedded local Ray instead of the container.
 
 Wait for Keycloak to finish importing the `anodyne` realm — tail its logs
 until you see `Imported realm anodyne` (or just poll the realm's OIDC

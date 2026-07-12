@@ -8,6 +8,7 @@ from uuid import UUID
 import jwt
 from anodyne_core.models import ModelConfig, TenantContext
 from anodyne_core.ports import AuthorizationPolicy, LLMProvider, SecretStore
+from anodyne_llm.adapter import LiteLLMProvider
 from anodyne_llm.registry import SqlModelRegistry
 from anodyne_storage.db import make_engine
 from anodyne_storage.secrets import FernetSecretStore
@@ -17,6 +18,10 @@ from fastapi import Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from api_gateway.config import Settings, get_settings
+
+
+class SecretStoreConfigError(RuntimeError):
+    """Raised when `ANODYNE_SECRET_KEY` is missing or not a valid Fernet key."""
 
 
 class ModelRegistry(Protocol):
@@ -87,12 +92,22 @@ def _engine(database_url: str) -> AsyncEngine:
 
 @lru_cache
 def _secret_store(secret_key: str) -> SecretStore:
-    return FernetSecretStore(secret_key.encode())
+    try:
+        return FernetSecretStore(secret_key.encode())
+    except ValueError as exc:
+        raise SecretStoreConfigError(
+            "ANODYNE_SECRET_KEY is missing or not a valid Fernet key. Generate one with: "
+            'python -c "from cryptography.fernet import Fernet; '
+            'print(Fernet.generate_key().decode())" and set it in your .env.'
+        ) from exc
 
 
-# Overridden in tests; real wiring builds these from Settings + backbone.
-def get_llm_provider() -> LLMProvider:  # pragma: no cover - wired at runtime
-    raise HTTPException(503, "LLM provider not configured")
+def get_llm_provider(settings: Settings = Depends(get_settings)) -> LLMProvider:
+    """Real LiteLLM-backed provider: decrypts per-model secrets via the Fernet store.
+
+    Overridden in tests via `app.dependency_overrides[get_llm_provider]`.
+    """
+    return LiteLLMProvider(_secret_store(settings.secret_key))
 
 
 def get_model_registry(settings: Settings = Depends(get_settings)) -> ModelRegistry:

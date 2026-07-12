@@ -17,6 +17,7 @@ from anodyne_dataset.ports import (
     SchemaProposer,
 )
 from anodyne_generation.proposer import LLMSchemaProposer
+from anodyne_image.registry import SqlImageProviderRegistry
 from anodyne_llm.adapter import LiteLLMProvider
 from anodyne_llm.registry import SqlModelRegistry
 from anodyne_observability.logging import bind_request_context
@@ -167,6 +168,19 @@ def get_sample_profiler() -> SampleProfiler:
     Overridden in tests via `app.dependency_overrides[get_sample_profiler]`.
     """
     return PandasSampleProfiler()
+
+
+def get_image_provider_registry(settings: Settings = Depends(get_settings)) -> ModelRegistry:
+    """Real, DB-backed per-tenant image-provider registry (separate table from
+    the LLM `model_configs` one -- see `anodyne_image`'s migration docstring).
+
+    Shares `ModelRegistry`'s structural type (identical CRUD shape over
+    `ModelConfig`); overridden in tests via
+    `app.dependency_overrides[get_image_provider_registry]`.
+    """
+    return SqlImageProviderRegistry(
+        _engine(settings.database_url), _secret_store(settings.secret_key)
+    )
 
 
 async def get_schema_proposer(

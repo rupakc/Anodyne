@@ -16,7 +16,10 @@ class Settings(BaseSettings):
     # Settings — see .env.example and docs/dev-runbook.md.
     database_url: str = "postgresql+asyncpg://anodyne_app:anodyne_app@localhost:5432/anodyne"
     s3_bucket: str = "anodyne"
-    secret_key: str = ""  # base64 Fernet key; required in prod
+    # base64 Fernet key; required in prod. Also used (if set) to build the
+    # FernetSecretStore that decrypts per-tenant image/video/audio-provider
+    # secrets -- see generation_worker.main.main().
+    secret_key: str = ""
     # From-sample tabular synthesis (see anodyne_tabular). CTGAN/TVAE epochs are kept
     # small by default -- tune upward for higher fidelity at the cost of fit time.
     tabular_ctgan_epochs: int = 100

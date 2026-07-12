@@ -3,9 +3,9 @@ from __future__ import annotations
 from anodyne_core.models import Role, TenantContext
 from anodyne_core.ports import AuthorizationPolicy
 
-_VIEWER = {"models:read", "datasets:read"}
-_MEMBER = _VIEWER | {"llm:invoke", "models:write", "datasets:write"}
-_ADMIN = _MEMBER | {"models:delete", "users:read"}
+_VIEWER = {"models:read", "datasets:read", "image_providers:read"}
+_MEMBER = _VIEWER | {"llm:invoke", "models:write", "datasets:write", "image_providers:write"}
+_ADMIN = _MEMBER | {"models:delete", "users:read", "image_providers:delete"}
 _OWNER = _ADMIN | {"users:write", "tenant:admin"}
 
 PERMISSIONS: dict[Role, set[str]] = {

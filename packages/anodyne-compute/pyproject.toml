@@ -3,7 +3,8 @@ name = "anodyne-compute"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = ["anodyne-dataset", "anodyne-generation", "anodyne-tabular", "anodyne-text",
-                "anodyne-core", "anodyne-llm", "anodyne-storage", "ray>=2.35", "pyarrow>=17"]
+                "anodyne-image", "anodyne-core", "anodyne-llm", "anodyne-storage",
+                "ray>=2.35", "pyarrow>=17"]
 
 [build-system]
 requires = ["hatchling"]
@@ -14,6 +15,7 @@ anodyne-dataset = { workspace = true }
 anodyne-generation = { workspace = true }
 anodyne-tabular = { workspace = true }
 anodyne-text = { workspace = true }
+anodyne-image = { workspace = true }
 anodyne-core = { workspace = true }
 anodyne-llm = { workspace = true }
 anodyne-storage = { workspace = true }

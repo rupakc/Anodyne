@@ -31,7 +31,7 @@ Full detail in [`docs/architecture.md`](docs/architecture.md). In brief:
 - **Identity:** Keycloak (OIDC) + Postgres row-level security for tenant isolation.
 - **Storage:** Postgres (metadata) · S3-compatible object store (MinIO on-prem / GCS cloud) · Redis.
 - **LLM layer:** LiteLLM behind a thin `LLMProvider` port (100+ providers + local).
-- **Frontend:** Next.js + TypeScript (autumn-pastel design system) — planned.
+- **Frontend:** Next.js + TypeScript (autumn-pastel design system) — live (generation UI).
 
 ### Monorepo layout
 
@@ -86,7 +86,8 @@ exercises Postgres row-level security via testcontainers.
 | Stage | Sub-system | Status |
 |------|------------|--------|
 | A + B | Platform Foundation + LLM Abstraction | ✅ walking skeleton |
-| C | Generation Engine (templates, from-sample, multimodal) | planned |
+| C0 | Generation foundation — tabular-from-description, Temporal + Ray, Web UI | ✅ done |
+| C1–C6 | Generation: tabular (full), text, image, audio, video, templates | in progress |
 | D | Perturbation (noise, drift, outliers, bias/edge-case) | planned |
 | E | Export & Storage (CSV/JSON/Parquet/Arrow) | planned |
 | F | Evaluation Engine (LLM-as-a-Judge MoE + reports) | planned |

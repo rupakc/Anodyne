@@ -15,6 +15,11 @@ class GenerationInput:
     tenant_id: str
     target_rows: int
     seed: int
+    # Additive field (default preserves every existing caller/test): lets the
+    # shared shard/assemble/register activities dispatch to a modality-specific
+    # implementation (see `anodyne_workflows.activities`/`image_activities`)
+    # without changing this workflow's orchestration at all.
+    modality: str = "tabular"
 
 
 @workflow.defn

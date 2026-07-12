@@ -19,12 +19,14 @@ import pyarrow as pa  # type: ignore[import-untyped]
 import pyarrow.parquet as pq  # type: ignore[import-untyped]
 import ray
 from anodyne_compute import remote_generate_shard
-from anodyne_core.ports import ObjectStore
+from anodyne_core.models import ModelConfig
+from anodyne_core.ports import ObjectStore, SecretStore
 from anodyne_dataset.models import DatasetVersion, GenerationJob, JobStatus
 from anodyne_dataset.ports import DatasetRepository
 from anodyne_storage.objectstore import S3ObjectStore
 from temporalio import activity
 
+from anodyne_workflows import image_activities
 from anodyne_workflows.workflow import GenerationInput
 
 # Rows per shard for `plan_shards`. Keeps Ray tasks small enough to parallelize
@@ -36,6 +38,17 @@ class ProgressPublisher(Protocol):
     """Duck-typed sink for live progress (bound to Redis pub/sub by the worker)."""
 
     async def publish(self, channel: str, message: str) -> None: ...
+
+
+class ImageConfigRegistry(Protocol):
+    """Duck-typed per-tenant image-provider config lookup.
+
+    `anodyne_image.registry.SqlImageProviderRegistry` is the real, DB-backed
+    implementation (bound by the worker); tests substitute an in-memory fake.
+    Mirrors `api_gateway.deps.ModelRegistry`'s `list` method.
+    """
+
+    async def list(self, tenant_id: uuid.UUID) -> list[ModelConfig]: ...
 
 
 @dataclass
@@ -58,6 +71,11 @@ class ActivityContext:
     s3_bucket: str
     s3_client: Any
     publisher: ProgressPublisher | None = None
+    # Image-modality wiring (additive; both default `None` so every existing
+    # tabular caller/test is unaffected). See `image_activities` for how
+    # these drive the `modality == "image"` branches below.
+    image_registry: ImageConfigRegistry | None = None
+    secret_store: SecretStore | None = None
 
 
 _ctx: ActivityContext | None = None
@@ -92,6 +110,33 @@ def _artifact_key(inp: GenerationInput) -> str:
     return f"datasets/{inp.dataset_id}/{inp.job_id}/artifact.parquet"
 
 
+async def _resolve_image_provider_config(
+    ctx: ActivityContext, tenant_id: uuid.UUID
+) -> tuple[ModelConfig, str | None]:
+    """The tenant's first registered image-provider config, with its secret
+    (if any) already decrypted -- so only plain, picklable values cross into
+    the Ray worker process (see `anodyne_compute.image_tasks`).
+    """
+    if ctx.image_registry is None:
+        raise RuntimeError(
+            "this worker has no image_registry configured; wire one in "
+            "generation_worker.main via build_worker/WorkerDeps"
+        )
+    configs = await ctx.image_registry.list(tenant_id)
+    if not configs:
+        raise ValueError(
+            f"no image provider configured for tenant {tenant_id}; register one via "
+            "POST /image-providers first"
+        )
+    config = configs[0]
+    api_key = (
+        ctx.secret_store.decrypt(config.secret_ref)
+        if config.secret_ref and ctx.secret_store
+        else None
+    )
+    return config, api_key
+
+
 @activity.defn(name="plan_shards")
 async def plan_shards(inp: GenerationInput) -> list[list[int]]:
     """Split `target_rows` into contiguous [start, count] chunks of `_SHARD_ROWS`."""
@@ -111,9 +156,16 @@ async def generate_shards(inp: GenerationInput, shards: list[list[int]]) -> list
     """Generate each shard on Ray and upload it to the object store; return its keys."""
     ctx = _context()
     store = _object_store(inp)
-    spec = await ctx.repo.get_spec(uuid.UUID(inp.tenant_id), uuid.UUID(inp.dataset_id))
+    tenant_id = uuid.UUID(inp.tenant_id)
+    spec = await ctx.repo.get_spec(tenant_id, uuid.UUID(inp.dataset_id))
     if spec is None:
         raise ValueError(f"dataset {inp.dataset_id} not found for tenant {inp.tenant_id}")
+
+    if inp.modality == "image":
+        provider_config, api_key = await _resolve_image_provider_config(ctx, tenant_id)
+        return await image_activities.generate_image_shards(
+            inp, shards, spec, store, provider_config, api_key
+        )
 
     keys: list[str] = []
     for i, (start, count) in enumerate(shards):
@@ -134,6 +186,9 @@ async def assemble_and_upload(inp: GenerationInput, keys: list[str]) -> str:
     happens later, at download time, in the gateway.
     """
     store = _object_store(inp)
+    if inp.modality == "image":
+        return await image_activities.assemble_image_manifest(inp, keys, store)
+
     tables = []
     for key in keys:
         data = await store.get(key)
@@ -152,11 +207,13 @@ async def assemble_and_upload(inp: GenerationInput, keys: list[str]) -> str:
 async def register_version(inp: GenerationInput, uri: str, rows: int) -> None:
     """Record the generated artifact as a new `DatasetVersion`."""
     ctx = _context()
+    fmt = "image_manifest" if inp.modality == "image" else "parquet"
     version = DatasetVersion(
         id=uuid.uuid4(),
         tenant_id=uuid.UUID(inp.tenant_id),
         dataset_id=uuid.UUID(inp.dataset_id),
         artifact_uri=uri,
+        format=fmt,
         row_count=rows,
     )
     await ctx.repo.add_version(version)

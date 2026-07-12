@@ -87,7 +87,8 @@ exercises Postgres row-level security via testcontainers.
 |------|------------|--------|
 | A + B | Platform Foundation + LLM Abstraction | ✅ walking skeleton |
 | C0 | Generation foundation — tabular-from-description, Temporal + Ray, Web UI | ✅ done |
-| C1–C6 | Generation: tabular (full), text, image, audio, video, templates | in progress |
+| C1 | Generation: tabular (full) — from-sample profiling, copula/CTGAN/TVAE, SDV opt-in | ✅ done |
+| C2–C6 | Generation: text, image, audio, video, templates | in progress |
 | D | Perturbation (noise, drift, outliers, bias/edge-case) | planned |
 | E | Export & Storage (CSV/JSON/Parquet/Arrow) | planned |
 | F | Evaluation Engine (LLM-as-a-Judge MoE + reports) | planned |

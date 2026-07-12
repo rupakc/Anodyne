@@ -1,0 +1,29 @@
+[project]
+name = "anodyne-tabular"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "anodyne-core",
+    "anodyne-dataset",
+    "pandas>=2.2",
+    "pyarrow>=17",
+    "numpy>=2",
+    "faker>=30",
+    "mimesis>=18",
+    "copulas>=0.11",
+    "rdt>=1.12",
+    "ctgan>=0.10",
+]
+
+[project.optional-dependencies]
+# SDV is BSL 1.1 (separately licensed) -- a true opt-in extra, never installed
+# by default and never referenced from the root uv workspace dev group.
+sdv = ["sdv>=1.15"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+anodyne-core = { workspace = true }
+anodyne-dataset = { workspace = true }

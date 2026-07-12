@@ -57,6 +57,20 @@ model_configs = Table(
     Column("enabled", String, nullable=False, server_default="true"),
 )
 
+video_provider_configs = Table(
+    "video_provider_configs",
+    metadata,
+    Column("id", PgUUID(as_uuid=True), primary_key=True),
+    Column("tenant_id", PgUUID(as_uuid=True), nullable=False),
+    Column("name", String, nullable=False),
+    Column("provider", String, nullable=False),
+    Column("model", String, nullable=False),
+    Column("params", JSONB, nullable=False, server_default="{}"),
+    Column("secret_ref", Text, nullable=True),
+    Column("api_base", String, nullable=True),
+    Column("enabled", String, nullable=False, server_default="true"),
+)
+
 datasets = Table(
     "datasets",
     metadata,
@@ -108,6 +122,7 @@ _TENANT_TABLES: dict[str, str] = {
     "datasets": "tenant_id",
     "generation_jobs": "tenant_id",
     "dataset_versions": "tenant_id",
+    "video_provider_configs": "tenant_id",
 }
 
 

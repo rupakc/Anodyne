@@ -42,7 +42,7 @@ class DatasetSpec(BaseModel):
     description: str
     modality: Modality
     source: str
-    schema: list[FieldSpec]  # type: ignore[assignment]
+    fields: list[FieldSpec]
     target_rows: int
     directives: dict[str, object] = Field(default_factory=dict)
     status: str = "draft"

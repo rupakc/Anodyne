@@ -46,9 +46,9 @@ def test_fieldspec_defaults():
 def test_datasetspec_is_tabular_description():
     spec = DatasetSpec(id=uuid4(), tenant_id=uuid4(), name="d", description="people",
                        modality=Modality.TABULAR, source="description",
-                       schema=[FieldSpec(name="age", semantic_type=SemanticType.INTEGER)],
+                       fields=[FieldSpec(name="age", semantic_type=SemanticType.INTEGER)],
                        target_rows=100)
-    assert spec.status == "draft" and spec.schema[0].name == "age"
+    assert spec.status == "draft" and spec.fields[0].name == "age"
 
 def test_job_progress_bounds():
     j = GenerationJob(id=uuid4(), tenant_id=uuid4(), dataset_id=uuid4())
@@ -88,7 +88,7 @@ class DatasetSpec(BaseModel):
     description: str
     modality: Modality
     source: str                                                    # "description" (C0)
-    schema: list[FieldSpec]
+    fields: list[FieldSpec]                                        # field/column specs
     target_rows: int
     directives: dict[str, object] = Field(default_factory=dict)
     status: str = "draft"
@@ -232,7 +232,7 @@ class TabularSampler(Generator):
 
     def generate(self, spec: DatasetSpec, start_row: int, count: int, seed: int) -> pa.Table:
         columns: dict[str, pa.Array] = {}
-        for i, field in enumerate(spec.schema):
+        for i, field in enumerate(spec.fields):
             # Independent, reproducible stream per (seed, field, shard offset).
             rng = np.random.default_rng([seed, i, start_row])
             fake = Faker(); Faker.seed(seed * 1_000_003 + i * 7919 + start_row)
@@ -405,7 +405,7 @@ async def engine():
 def _spec(tid):
     return DatasetSpec(id=uuid4(), tenant_id=tid, name="d", description="x",
                        modality=Modality.TABULAR, source="description",
-                       schema=[FieldSpec(name="age", semantic_type=SemanticType.INTEGER)], target_rows=10)
+                       fields=[FieldSpec(name="age", semantic_type=SemanticType.INTEGER)], target_rows=10)
 
 async def test_spec_crud_is_tenant_isolated(engine):
     repo = SqlDatasetRepository(engine)
@@ -425,7 +425,7 @@ async def test_job_roundtrip(engine):
 
 - [ ] **Step 2: Run to verify failure** — `uv run pytest packages/anodyne-storage/tests/test_dataset_repo.py -v -m integration` → FAIL.
 
-- [ ] **Step 3: Add tables to `db.py`** — append `datasets` (id pk, tenant_id, name, description, modality, source, schema JSONB, target_rows, directives JSONB, status), `generation_jobs` (id pk, tenant_id, dataset_id, status, progress float, message, workflow_id), `dataset_versions` (id pk, tenant_id, dataset_id, artifact_uri, format, row_count, checksum) — all with `tenant_id`. Add each to `_TENANT_TABLES` keyed on `tenant_id`.
+- [ ] **Step 3: Add tables to `db.py`** — append `datasets` (id pk, tenant_id, name, description, modality, source, field_specs JSONB, target_rows, directives JSONB, status), `generation_jobs` (id pk, tenant_id, dataset_id, status, progress float, message, workflow_id), `dataset_versions` (id pk, tenant_id, dataset_id, artifact_uri, format, row_count, checksum) — all with `tenant_id`. Add each to `_TENANT_TABLES` keyed on `tenant_id`.
 
 - [ ] **Step 4: Migration `0002_datasets.py`** — `down_revision = "0001"`; create the three tables via `op.create_table` and enable/force RLS + `CREATE POLICY tenant_isolation ... USING (tenant_id = current_setting('app.tenant_id', true)::uuid)` for each (mirror `0001`).
 
@@ -443,7 +443,7 @@ from anodyne_storage.db import datasets, dataset_versions, generation_jobs, tena
 def _spec_from_row(m) -> DatasetSpec:  # type: ignore[no-untyped-def]
     return DatasetSpec(id=m["id"], tenant_id=m["tenant_id"], name=m["name"],
         description=m["description"], modality=m["modality"], source=m["source"],
-        schema=[FieldSpec.model_validate(f) for f in m["schema"]],
+        fields=[FieldSpec.model_validate(f) for f in m["field_specs"]],
         target_rows=m["target_rows"], directives=m["directives"], status=m["status"])
 
 class SqlDatasetRepository(DatasetRepository):
@@ -454,7 +454,7 @@ class SqlDatasetRepository(DatasetRepository):
             await s.execute(insert(datasets).values(
                 id=spec.id, tenant_id=spec.tenant_id, name=spec.name, description=spec.description,
                 modality=str(spec.modality), source=spec.source,
-                schema=[f.model_dump(mode="json") for f in spec.schema],
+                field_specs=[f.model_dump(mode="json") for f in spec.fields],
                 target_rows=spec.target_rows, directives=spec.directives, status=spec.status))
             await s.commit()
     async def get_spec(self, tenant_id: UUID, dataset_id: UUID) -> DatasetSpec | None:
@@ -494,7 +494,7 @@ pytestmark = pytest.mark.integration
 def _spec():
     return DatasetSpec(id=uuid4(), tenant_id=uuid4(), name="d", description="",
         modality=Modality.TABULAR, source="description",
-        schema=[FieldSpec(name="age", semantic_type=SemanticType.INTEGER)], target_rows=20)
+        fields=[FieldSpec(name="age", semantic_type=SemanticType.INTEGER)], target_rows=20)
 
 def test_generate_shard_bytes_is_parquet():
     data = generate_shard_bytes(_spec(), 0, 20, 3)

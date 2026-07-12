@@ -23,10 +23,10 @@ def test_datasetspec_is_tabular_description() -> None:
         description="people",
         modality=Modality.TABULAR,
         source="description",
-        schema=[FieldSpec(name="age", semantic_type=SemanticType.INTEGER)],
+        fields=[FieldSpec(name="age", semantic_type=SemanticType.INTEGER)],
         target_rows=100,
     )
-    assert spec.status == "draft" and spec.schema[0].name == "age"
+    assert spec.status == "draft" and spec.fields[0].name == "age"
 
 
 def test_job_progress_bounds() -> None:

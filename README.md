@@ -95,6 +95,12 @@ exercises Postgres row-level security via testcontainers.
 | H | Web UI | planned |
 | I | Deployment & CI/CD (GCP + on-prem) | in progress |
 
+## Documentation
+
+- **Architecture & specs:** [`docs/architecture.md`](docs/architecture.md), `docs/superpowers/specs/`, `docs/superpowers/plans/`.
+- **Local dev runbook:** [`docs/dev-runbook.md`](docs/dev-runbook.md).
+- **Non-technical feature guides (GitHub Wiki):** source in [`docs/wiki/`](docs/wiki/) — plain-language explanations of each feature (Foundation, Bring Your Own AI Model, Multi-Tenancy & Security, Generation Engine, Local Development). Published to the repository Wiki.
+
 ## License
 
 See [LICENSE](LICENSE).

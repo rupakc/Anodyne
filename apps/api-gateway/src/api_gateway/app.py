@@ -64,6 +64,15 @@ class RegisterImageProviderRequest(BaseModel):
     params: dict[str, object] = {}
 
 
+class RegisterAudioProviderRequest(BaseModel):
+    name: str
+    provider: str  # e.g. "elevenlabs", "xtts"
+    model: str
+    api_key: str | None = None
+    api_base: str | None = None
+    params: dict[str, object] = {}
+
+
 class CreateImageDatasetRequest(BaseModel):
     name: str
     description: str
@@ -272,6 +281,45 @@ def create_app() -> FastAPI:
         config_id: UUID,
         ctx: TenantContext = Depends(deps.require("video_providers:delete")),
         registry: VideoProviderRegistry = Depends(deps.get_video_provider_registry),
+    ) -> None:
+        await registry.delete(ctx.tenant_id, config_id)
+
+    @app.post("/audio-providers", status_code=201)
+    async def register_audio_provider(
+        body: RegisterAudioProviderRequest,
+        ctx: TenantContext = Depends(deps.require("audio_providers:write")),
+        registry: ModelRegistry = Depends(deps.get_audio_provider_registry),
+    ) -> dict[str, object]:
+        cfg = await registry.create(
+            ctx.tenant_id,
+            name=body.name,
+            provider=body.provider,
+            model=body.model,
+            api_key=body.api_key,
+            api_base=body.api_base,
+            params=body.params,
+        )
+        data = cfg.model_dump(mode="json")
+        data.pop("secret_ref", None)  # never expose refs
+        return data
+
+    @app.get("/audio-providers")
+    async def list_audio_providers(
+        ctx: TenantContext = Depends(deps.require("audio_providers:read")),
+        registry: ModelRegistry = Depends(deps.get_audio_provider_registry),
+    ) -> list[dict[str, object]]:
+        out = []
+        for cfg in await registry.list(ctx.tenant_id):
+            d = cfg.model_dump(mode="json")
+            d.pop("secret_ref", None)
+            out.append(d)
+        return out
+
+    @app.delete("/audio-providers/{config_id}", status_code=204)
+    async def delete_audio_provider(
+        config_id: UUID,
+        ctx: TenantContext = Depends(deps.require("audio_providers:delete")),
+        registry: ModelRegistry = Depends(deps.get_audio_provider_registry),
     ) -> None:
         await registry.delete(ctx.tenant_id, config_id)
 

@@ -34,7 +34,7 @@ from anodyne_dataset.models import (
     SemanticType,
 )
 from anodyne_dataset.ports import DatasetRepository, ProfileRepository
-from anodyne_workflows import activities as activities_module
+from anodyne_workflows import handlers as handlers_module
 from anodyne_workflows.activities import (
     ActivityContext,
     assemble_and_upload,
@@ -330,7 +330,7 @@ async def test_generate_shards_from_sample_fits_once_and_samples_per_shard(
         build_calls.append(method)
         return _FakeGenerator()
 
-    monkeypatch.setattr(activities_module, "build_tabular_generator", _fake_build)
+    monkeypatch.setattr(handlers_module, "build_tabular_generator", _fake_build)
 
     keys = await generate_shards(inp, [[0, 10], [10, 10]])
 

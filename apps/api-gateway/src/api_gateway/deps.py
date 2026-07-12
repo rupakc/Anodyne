@@ -16,6 +16,7 @@ from anodyne_dataset.ports import (
     SampleProfiler,
     SchemaProposer,
 )
+from anodyne_audio.registry import SqlAudioProviderRegistry
 from anodyne_generation.proposer import LLMSchemaProposer
 from anodyne_image.registry import SqlImageProviderRegistry
 from anodyne_llm.adapter import LiteLLMProvider
@@ -192,6 +193,19 @@ def get_image_provider_registry(settings: Settings = Depends(get_settings)) -> M
     `app.dependency_overrides[get_image_provider_registry]`.
     """
     return SqlImageProviderRegistry(
+        _engine(settings.database_url), _secret_store(settings.secret_key)
+    )
+
+
+def get_audio_provider_registry(settings: Settings = Depends(get_settings)) -> ModelRegistry:
+    """Real, DB-backed per-tenant audio-provider registry (separate table from
+    the LLM `model_configs` one, mirroring image/video).
+
+    Shares `ModelRegistry`'s structural type (identical CRUD shape over
+    `ModelConfig`); overridden in tests via
+    `app.dependency_overrides[get_audio_provider_registry]`.
+    """
+    return SqlAudioProviderRegistry(
         _engine(settings.database_url), _secret_store(settings.secret_key)
     )
 

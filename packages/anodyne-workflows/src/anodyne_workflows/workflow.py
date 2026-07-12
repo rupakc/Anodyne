@@ -15,9 +15,19 @@ class GenerationInput:
     tenant_id: str
     target_rows: int
     seed: int
+    # Additive fields; defaults preserve every existing caller/test. The
+    # workflow itself never inspects these -- they are carried through to the
+    # activities (exactly like `seed`), which dispatch on `modality` via the
+    # modality registry. Keeping the orchestration modality-agnostic is what
+    # lets one workflow definition serve every modality (Temporal determinism:
+    # `workflow.py` imports no modality package).
+    modality: str = "tabular"
     # Tabular synthesizer for source="sample" datasets ("copula"/"ctgan"/"tvae"/"sdv").
     # Ignored for source != "sample" (those always use `TabularSampler`).
     method: str = "copula"
+    # Which of the tenant's registered models to generate text with; unused for
+    # non-text modalities.
+    model_config_id: str | None = None
 
 
 @workflow.defn

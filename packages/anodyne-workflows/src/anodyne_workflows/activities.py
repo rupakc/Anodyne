@@ -4,34 +4,40 @@ These bind to infra (repo, object store, Ray) via a module-level context that
 the worker sets once at startup (wired in Task 7 / `generation-worker`). Kept
 thin on purpose: the workflow test (`tests/test_workflow.py`) exercises the
 orchestration with mocked activities, not these implementations.
+
+The four core activities (`plan_shards`/`generate_shards`/`assemble_and_upload`/
+`register_version`) are modality-agnostic: each resolves the dataset's
+`spec.modality` to a `ModalityHandler` via `anodyne_workflows.modality` and
+delegates the modality-specific work there. Tabular is the default handler, so
+the C0 path is byte-for-byte unchanged. Handlers self-register when
+`anodyne_workflows.handlers` is imported (see the bottom of this module).
 """
 
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import uuid
-from dataclasses import dataclass
-from typing import Any, Protocol
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, Protocol
 
-import pyarrow as pa  # type: ignore[import-untyped]
-import pyarrow.parquet as pq  # type: ignore[import-untyped]
-import ray
-from anodyne_compute import remote_generate_shard
-from anodyne_compute.sample_tasks import remote_generate_shard_from_generator
-from anodyne_core.ports import ObjectStore
+from anodyne_core.models import ModelConfig
+from anodyne_core.ports import ObjectStore, SecretStore
 from anodyne_dataset.models import DatasetSpec, DatasetVersion, GenerationJob, JobStatus
-from anodyne_dataset.ports import DatasetRepository, ProfileRepository
+from anodyne_dataset.ports import AudioProvider, DatasetRepository, ProfileRepository
 from anodyne_storage.objectstore import S3ObjectStore
-from anodyne_tabular.builder import build_tabular_generator
-from anodyne_tabular.io import read_sample
 from temporalio import activity
 
+from anodyne_workflows.modality import get_handler
 from anodyne_workflows.workflow import GenerationInput
 
-# Rows per shard for `plan_shards`. Keeps Ray tasks small enough to parallelize
-# without so many shards that per-task overhead dominates.
+if TYPE_CHECKING:
+    from anodyne_video.ports import VideoProvider, VideoProviderRegistry
+
+# Rows per shard for the tabular `plan_shards` default. Keeps Ray tasks small
+# enough to parallelize without so many shards that per-task overhead
+# dominates. Other modalities set their own via their `ModalityHandler`.
 _SHARD_ROWS = 50_000
 
 
@@ -39,6 +45,26 @@ class ProgressPublisher(Protocol):
     """Duck-typed sink for live progress (bound to Redis pub/sub by the worker)."""
 
     async def publish(self, channel: str, message: str) -> None: ...
+
+
+class ModelRegistryLike(Protocol):
+    """Structural type for the tenant model registry text generation needs.
+
+    `anodyne_llm.registry.SqlModelRegistry` satisfies this in production
+    (only `.get` is used here); tests substitute fakes.
+    """
+
+    async def get(self, tenant_id: uuid.UUID, config_id: uuid.UUID) -> ModelConfig | None: ...
+
+
+class ImageConfigRegistry(Protocol):
+    """Duck-typed per-tenant image-provider config lookup.
+
+    `anodyne_image.registry.SqlImageProviderRegistry` is the real, DB-backed
+    implementation (bound by the worker); tests substitute an in-memory fake.
+    """
+
+    async def list(self, tenant_id: uuid.UUID) -> list[ModelConfig]: ...
 
 
 @dataclass
@@ -55,18 +81,31 @@ class ActivityContext:
     could never be found at `{tenant}/{tenant}/...`. Building the store
     per-activity from `inp.tenant_id` keeps both sides using the exact same
     prefix.
+
+    All modality-specific fields below default to values that make tabular-only
+    wiring (every existing call site/test) work unchanged; each is consulted
+    only by its own `ModalityHandler`.
     """
 
     repo: DatasetRepository
     s3_bucket: str
     s3_client: Any
     publisher: ProgressPublisher | None = None
-    # From-sample tabular synthesis (see `_generate_shards_from_sample`). All optional/
-    # defaulted so every existing `ActivityContext(repo=..., s3_bucket=..., s3_client=...)`
-    # construction keeps working unchanged.
+    # Tabular from-sample synthesis (see the tabular handler).
     profile_repo: ProfileRepository | None = None
     ctgan_epochs: int = 100
     enable_sdv: bool = False
+    # Text generation.
+    model_registry: ModelRegistryLike | None = None
+    secret_key: str = ""
+    # Image generation.
+    image_registry: ImageConfigRegistry | None = None
+    secret_store: SecretStore | None = None
+    # Audio generation: resolves a Modality.AUDIO spec to the tenant's provider.
+    audio_provider_factory: Callable[[DatasetSpec], Awaitable[AudioProvider]] | None = None
+    # Video generation.
+    video_registry: VideoProviderRegistry | None = None
+    video_providers: dict[str, VideoProvider] = field(default_factory=dict)
 
 
 _ctx: ActivityContext | None = None
@@ -91,24 +130,37 @@ def _object_store(inp: GenerationInput) -> ObjectStore:
     return S3ObjectStore(ctx.s3_bucket, uuid.UUID(inp.tenant_id), client=ctx.s3_client)
 
 
-def _shard_key(inp: GenerationInput, index: int) -> str:
-    # Tenant-relative: `S3ObjectStore` prepends `{tenant_id}/` itself, so this
-    # key must NOT repeat it (see `ActivityContext` docstring above).
-    return f"datasets/{inp.dataset_id}/{inp.job_id}/shard-{index}.parquet"
+async def _spec_for(ctx: ActivityContext, inp: GenerationInput) -> DatasetSpec | None:
+    return await ctx.repo.get_spec(uuid.UUID(inp.tenant_id), uuid.UUID(inp.dataset_id))
 
 
-def _artifact_key(inp: GenerationInput) -> str:
-    return f"datasets/{inp.dataset_id}/{inp.job_id}/artifact.parquet"
+def _modality_of(spec: DatasetSpec | None) -> str:
+    return str(spec.modality) if spec is not None else "tabular"
 
 
 @activity.defn(name="plan_shards")
 async def plan_shards(inp: GenerationInput) -> list[list[int]]:
-    """Split `target_rows` into contiguous [start, count] chunks of `_SHARD_ROWS`."""
+    """Split `target_rows` into contiguous [start, count] chunks.
+
+    The chunk size is the modality handler's `shard_rows` (tabular's 50k by
+    default). If the spec can't be resolved, falls back to the tabular size --
+    the conservative, previously-only behavior.
+    """
+    # Tolerate an unconfigured context here (unlike the other activities): the
+    # chunk size is a pure planning detail, and `plan_shards` is unit-tested as
+    # a standalone async function. Falls back to the tabular size when the spec
+    # (or context) can't be resolved -- the conservative, previously-only size.
+    shard_rows = _SHARD_ROWS
+    if _ctx is not None:
+        spec = await _spec_for(_ctx, inp)
+        if spec is not None:
+            shard_rows = get_handler(_modality_of(spec)).shard_rows
+
     shards: list[list[int]] = []
     start = 0
     remaining = inp.target_rows
     while remaining > 0:
-        count = min(_SHARD_ROWS, remaining)
+        count = min(shard_rows, remaining)
         shards.append([start, count])
         start += count
         remaining -= count
@@ -117,106 +169,50 @@ async def plan_shards(inp: GenerationInput) -> list[list[int]]:
 
 @activity.defn(name="generate_shards")
 async def generate_shards(inp: GenerationInput, shards: list[list[int]]) -> list[str]:
-    """Generate each shard on Ray and upload it to the object store; return its keys."""
+    """Generate each shard and upload it to the object store; return its keys.
+
+    Dispatches to the dataset modality's `ModalityHandler` -- tabular (the
+    default) generates Parquet shards on Ray exactly as before.
+    """
     ctx = _context()
     store = _object_store(inp)
-    spec = await ctx.repo.get_spec(uuid.UUID(inp.tenant_id), uuid.UUID(inp.dataset_id))
+    spec = await _spec_for(ctx, inp)
     if spec is None:
         raise ValueError(f"dataset {inp.dataset_id} not found for tenant {inp.tenant_id}")
-
-    if spec.source == "sample":
-        return await _generate_shards_from_sample(ctx, store, spec, inp, shards)
-
-    keys: list[str] = []
-    for i, (start, count) in enumerate(shards):
-        ref = remote_generate_shard.remote(spec, start, count, inp.seed + i)
-        data: bytes = await asyncio.to_thread(ray.get, ref)
-        key = _shard_key(inp, i)
-        await store.put(key, data)
-        keys.append(key)
-    return keys
-
-
-async def _generate_shards_from_sample(
-    ctx: ActivityContext,
-    store: ObjectStore,
-    spec: DatasetSpec,
-    inp: GenerationInput,
-    shards: list[list[int]],
-) -> list[str]:
-    """From-sample path: fit a tabular synthesizer once, then sample each shard on Ray.
-
-    Fitting (not just sampling) happens once per generation job -- refitting a
-    statistical/deep model per shard would be wasteful and would break the
-    seed-determinism contract (see `anodyne_tabular`'s generators).
-    """
-    if ctx.profile_repo is None:
-        raise RuntimeError(
-            "ActivityContext.profile_repo not configured: cannot generate a "
-            "source='sample' dataset"
-        )
-    tenant_id, dataset_id = uuid.UUID(inp.tenant_id), uuid.UUID(inp.dataset_id)
-    profile = await ctx.profile_repo.get_profile(tenant_id, dataset_id)
-    if profile is None:
-        raise ValueError(
-            f"dataset {inp.dataset_id} has source='sample' but no profile; "
-            "upload a sample before generating"
-        )
-    sample_bytes = await store.get(profile.sample_uri)
-    sample_df = await asyncio.to_thread(read_sample, sample_bytes, profile.sample_filename)
-    generator = await asyncio.to_thread(
-        build_tabular_generator,
-        inp.method,
-        profile,
-        sample_df,
-        epochs=ctx.ctgan_epochs,
-        enable_sdv=ctx.enable_sdv,
-    )
-
-    keys: list[str] = []
-    for i, (start, count) in enumerate(shards):
-        ref = remote_generate_shard_from_generator.remote(
-            generator, spec, start, count, inp.seed + i
-        )
-        data: bytes = await asyncio.to_thread(ray.get, ref)
-        key = _shard_key(inp, i)
-        await store.put(key, data)
-        keys.append(key)
-    return keys
+    return await get_handler(_modality_of(spec)).generate_shards(ctx, inp, spec, shards, store)
 
 
 @activity.defn(name="assemble_and_upload")
 async def assemble_and_upload(inp: GenerationInput, keys: list[str]) -> str:
-    """Concatenate shard Parquet tables into one artifact and upload it.
+    """Assemble the shard outputs into one artifact and upload it.
 
     Returns the durable object-store *key* (not a presigned URL): the key is
     what gets persisted as `DatasetVersion.artifact_uri`, and presigning only
-    happens later, at download time, in the gateway.
+    happens later, at download time, in the gateway. The concrete artifact
+    shape (Parquet, JSONL, manifest, ...) is the modality handler's concern.
     """
+    ctx = _context()
     store = _object_store(inp)
-    tables = []
-    for key in keys:
-        data = await store.get(key)
-        tables.append(pq.read_table(io.BytesIO(data)))
-
-    table = pa.concat_tables(tables) if tables else pa.table({})
-    buf = io.BytesIO()
-    pq.write_table(table, buf)
-
-    artifact_key = _artifact_key(inp)
-    await store.put(artifact_key, buf.getvalue())
-    return artifact_key
+    spec = await _spec_for(ctx, inp)
+    return await get_handler(_modality_of(spec)).assemble(ctx, inp, spec, keys, store)
 
 
 @activity.defn(name="register_version")
 async def register_version(inp: GenerationInput, uri: str, rows: int) -> None:
-    """Record the generated artifact as a new `DatasetVersion`."""
+    """Record the generated artifact as a new `DatasetVersion`.
+
+    The artifact `format` is the modality handler's `artifact_format`
+    (tabular: `parquet`).
+    """
     ctx = _context()
+    spec = await _spec_for(ctx, inp)
+    fmt = get_handler(_modality_of(spec)).artifact_format
     version = DatasetVersion(
         id=uuid.uuid4(),
         tenant_id=uuid.UUID(inp.tenant_id),
         dataset_id=uuid.UUID(inp.dataset_id),
         artifact_uri=uri,
+        format=fmt,
         row_count=rows,
     )
     await ctx.repo.add_version(version)
@@ -249,3 +245,10 @@ async def set_status(
     if ctx.publisher is not None:
         message = json.dumps({"job_id": inp.job_id, "status": status, "progress": progress})
         await ctx.publisher.publish(f"job:{inp.job_id}", message)
+
+
+# Import handlers for their registration side effect -- this is what populates
+# the modality registry that the activities above dispatch through. Deferred to
+# the bottom so `ActivityContext` and the helpers the handlers import are
+# already defined (avoids an import cycle).
+from anodyne_workflows import handlers as _handlers  # noqa: E402,F401

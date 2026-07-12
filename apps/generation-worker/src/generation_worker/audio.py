@@ -10,9 +10,11 @@ Maps a tenant's registered `ModelConfig.provider` to the concrete adapter:
   never touches Ray).
 
 Selection: `spec.directives["audio"]["model_config_id"]` if set and found,
-else the tenant's first registered `ModelConfig` (reuses the exact
-`anodyne-llm` model-registry + encrypted-secret pattern -- an audio provider
-IS a `ModelConfig` row; no separate provider-config storage).
+else the tenant's first registered audio-provider config. The registry passed
+in is `anodyne_audio.registry.SqlAudioProviderRegistry` (over the dedicated
+`audio_provider_configs` table, encrypted-secret pattern identical to the LLM
+model registry) -- so audio stores its providers the same way image/video do,
+rather than reusing the LLM `model_configs` table.
 """
 
 from __future__ import annotations

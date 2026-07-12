@@ -4,8 +4,9 @@ The video analogue of `anodyne_dataset.ports.Generator` -- but async and
 manifest-shaped rather than a synchronous `pyarrow.Table` producer (see the
 design doc's "why video doesn't reuse the tabular `Generator` port" section).
 Storage-agnostic on purpose: uploading clips to the object store is the
-Temporal activity's job (`anodyne_workflows.video_activities`), not this
-class's, so it stays unit-testable with a fake `VideoProvider` alone.
+video modality handler's job (`anodyne_workflows.handlers.VideoHandler`,
+dispatched from the shared `generate_shards` activity), not this class's, so
+it stays unit-testable with a fake `VideoProvider` alone.
 """
 
 from __future__ import annotations

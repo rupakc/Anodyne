@@ -1,9 +1,14 @@
-"""video_provider_configs: per-tenant video-generation provider configs + RLS
+"""audio_provider_configs: per-tenant audio (TTS) provider registrations + RLS
 
-Revision ID: 0003
-Revises: 0002
+Revision ID: 0006
+Revises: 0005
 Create Date: 2026-07-12
 
+Mirrors `image_provider_configs`/`video_provider_configs` exactly: a per-tenant
+provider-config table kept separate from the LLM `model_configs` registry, so
+every generation modality (image/video/audio) stores its providers the same
+way. Introduced during the C1-C6 integration to make audio consistent with the
+other two (audio previously reused `model_configs`).
 """
 
 from __future__ import annotations
@@ -14,16 +19,13 @@ from alembic import op
 from anodyne_storage.db import metadata
 
 # revision identifiers, used by Alembic.
-revision: str = "0003"
-down_revision: str | None = "0002"
+revision: str = "0006"
+down_revision: str | None = "0005"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-# Kept in sync with `anodyne_storage.db._TENANT_TABLES` (duplicated here since
-# `apply_rls` is async and this migration runs synchronously -- see
-# `0002_datasets.py` for the same pattern).
 _TENANT_TABLES: dict[str, str] = {
-    "video_provider_configs": "tenant_id",
+    "audio_provider_configs": "tenant_id",
 }
 
 

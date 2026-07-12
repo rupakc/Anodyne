@@ -10,6 +10,7 @@ resolution-markers = [
 members = [
     "anodyne",
     "anodyne-core",
+    "anodyne-dataset",
     "anodyne-llm",
     "anodyne-observability",
     "anodyne-storage",
@@ -179,6 +180,7 @@ source = { virtual = "." }
 [package.dev-dependencies]
 dev = [
     { name = "anodyne-core" },
+    { name = "anodyne-dataset" },
     { name = "anodyne-llm" },
     { name = "anodyne-observability" },
     { name = "anodyne-storage" },
@@ -198,6 +200,7 @@ dev = [
 [package.metadata.requires-dev]
 dev = [
     { name = "anodyne-core", editable = "packages/anodyne-core" },
+    { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
     { name = "anodyne-llm", editable = "packages/anodyne-llm" },
     { name = "anodyne-observability", editable = "packages/anodyne-observability" },
     { name = "anodyne-storage", editable = "packages/anodyne-storage" },
@@ -222,6 +225,21 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "pydantic", specifier = ">=2.8" }]
+
+[[package]]
+name = "anodyne-dataset"
+version = "0.1.0"
+source = { editable = "packages/anodyne-dataset" }
+dependencies = [
+    { name = "anodyne-core" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anodyne-core", editable = "packages/anodyne-core" },
+    { name = "pydantic", specifier = ">=2.8" },
+]
 
 [[package]]
 name = "anodyne-llm"

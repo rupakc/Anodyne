@@ -3,7 +3,7 @@ name = "anodyne-image"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = ["anodyne-core", "anodyne-dataset", "anodyne-storage", "pyarrow>=17",
-                "httpx>=0.27"]
+                "httpx>=0.27", "ray>=2.35"]
 
 [build-system]
 requires = ["hatchling"]

@@ -36,12 +36,11 @@ export function ProviderSelect({
 
   useEffect(() => {
     let cancelled = false;
-    setProviders(null);
-    setError(null);
     api.listProviders(kind).then(
       (list) => {
         if (cancelled) return;
         setProviders(list);
+        setError(null);
       },
       (err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load providers.");

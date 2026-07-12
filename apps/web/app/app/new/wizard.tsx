@@ -7,11 +7,12 @@ import { Button } from "@/components/ui/button";
 import { StepIndicator, type WizardStepMeta } from "./step-indicator";
 import { DescribeStep } from "./describe-step";
 import { TemplateStep } from "./template-step";
+import { SampleStep } from "./sample-step";
 import { ReviewStep } from "./review-step";
 import { ConfirmStep } from "./confirm-step";
 
 type Step = "describe" | "review" | "confirm";
-type Source = "describe" | "template";
+type Source = "describe" | "sample" | "template";
 
 const STEPS: WizardStepMeta[] = [
   { key: "describe", label: "Describe" },
@@ -71,6 +72,12 @@ export function Wizard({ accessToken, api: injectedApi }: WizardProps) {
     setStep("review");
   }
 
+  function handleSampleCreated(created: DatasetSpec) {
+    setSpec(created);
+    setFields(created.fields);
+    setStep("review");
+  }
+
   async function handleReviewNext() {
     if (!spec) return;
     setPending(true);
@@ -115,7 +122,7 @@ export function Wizard({ accessToken, api: injectedApi }: WizardProps) {
 
       {step === "describe" ? (
         <div className="flex flex-col gap-4">
-          <div className="flex gap-2" role="group" aria-label="Dataset source">
+          <div className="flex flex-wrap gap-2" role="group" aria-label="Dataset source">
             <Button
               type="button"
               size="sm"
@@ -123,6 +130,14 @@ export function Wizard({ accessToken, api: injectedApi }: WizardProps) {
               onClick={() => setSource("describe")}
             >
               Describe
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={source === "sample" ? "default" : "outline"}
+              onClick={() => setSource("sample")}
+            >
+              From a sample
             </Button>
             <Button
               type="button"
@@ -136,6 +151,8 @@ export function Wizard({ accessToken, api: injectedApi }: WizardProps) {
 
           {source === "describe" ? (
             <DescribeStep pending={pending} onSubmit={handleDescribe} />
+          ) : source === "sample" ? (
+            <SampleStep api={api} pending={pending} onCreated={handleSampleCreated} />
           ) : (
             <TemplateStep api={api} pending={pending} onCreated={handleTemplateCreated} />
           )}

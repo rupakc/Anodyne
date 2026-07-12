@@ -103,7 +103,12 @@ async def generate_shards(inp: GenerationInput, shards: list[list[int]]) -> list
 
 @activity.defn(name="assemble_and_upload")
 async def assemble_and_upload(inp: GenerationInput, keys: list[str]) -> str:
-    """Concatenate shard Parquet tables into one artifact and upload it."""
+    """Concatenate shard Parquet tables into one artifact and upload it.
+
+    Returns the durable object-store *key* (not a presigned URL): the key is
+    what gets persisted as `DatasetVersion.artifact_uri`, and presigning only
+    happens later, at download time, in the gateway.
+    """
     ctx = _context()
     tables = []
     for key in keys:
@@ -116,7 +121,7 @@ async def assemble_and_upload(inp: GenerationInput, keys: list[str]) -> str:
 
     artifact_key = _artifact_key(inp)
     await ctx.object_store.put(artifact_key, buf.getvalue())
-    return await ctx.object_store.presigned_url(artifact_key)
+    return artifact_key
 
 
 @activity.defn(name="register_version")
@@ -159,4 +164,4 @@ async def set_status(
     await ctx.repo.save_job(job)
     if ctx.publisher is not None:
         message = json.dumps({"job_id": inp.job_id, "status": status, "progress": progress})
-        await ctx.publisher.publish(f"jobs:{inp.tenant_id}", message)
+        await ctx.publisher.publish(f"job:{inp.job_id}", message)

@@ -7,25 +7,35 @@ fake `DatasetRepository`/`ObjectStore` implementations.
 
 from __future__ import annotations
 
+import io
+import json
 import uuid
 
+import pyarrow as pa  # type: ignore[import-untyped]
+import pyarrow.parquet as pq  # type: ignore[import-untyped]
 from anodyne_core.ports import ObjectStore
 from anodyne_dataset.models import DatasetSpec, DatasetVersion, GenerationJob, JobStatus
 from anodyne_dataset.ports import DatasetRepository
 from anodyne_workflows.activities import (
     ActivityContext,
+    assemble_and_upload,
     configure_activities,
     plan_shards,
+    register_version,
     set_status,
 )
 from anodyne_workflows.workflow import GenerationInput
 
 
 class _FakeObjectStore(ObjectStore):
-    async def put(self, key: str, data: bytes) -> None: ...
+    def __init__(self) -> None:
+        self.data: dict[str, bytes] = {}
+
+    async def put(self, key: str, data: bytes) -> None:
+        self.data[key] = data
 
     async def get(self, key: str) -> bytes:
-        return b""
+        return self.data.get(key, b"")
 
     async def presigned_url(self, key: str, expires: int = 3600) -> str:
         return f"https://example.test/{key}"
@@ -34,9 +44,20 @@ class _FakeObjectStore(ObjectStore):
         return []
 
 
+class _FakePublisher:
+    """Records every published (channel, message) pair for assertion."""
+
+    def __init__(self) -> None:
+        self.messages: list[tuple[str, str]] = []
+
+    async def publish(self, channel: str, message: str) -> None:
+        self.messages.append((channel, message))
+
+
 class _FakeDatasetRepository(DatasetRepository):
     def __init__(self) -> None:
         self.jobs: dict[uuid.UUID, GenerationJob] = {}
+        self.versions: list[DatasetVersion] = []
 
     async def create_spec(self, spec: DatasetSpec) -> None: ...
 
@@ -54,7 +75,8 @@ class _FakeDatasetRepository(DatasetRepository):
     async def get_job(self, tenant_id: uuid.UUID, job_id: uuid.UUID) -> GenerationJob | None:
         return self.jobs.get(job_id)
 
-    async def add_version(self, version: DatasetVersion) -> None: ...
+    async def add_version(self, version: DatasetVersion) -> None:
+        self.versions.append(version)
 
     async def list_versions(
         self, tenant_id: uuid.UUID, dataset_id: uuid.UUID
@@ -113,6 +135,64 @@ async def test_set_status_updates_message_when_passed() -> None:
     assert stored.workflow_id == "wf-x"
     assert stored.message == "boom"
     assert stored.status == JobStatus.FAILED
+
+
+async def test_set_status_publishes_to_per_job_channel() -> None:
+    job_id, tenant_id, dataset_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    repo = _FakeDatasetRepository()
+    repo.jobs[job_id] = GenerationJob(id=job_id, tenant_id=tenant_id, dataset_id=dataset_id)
+    publisher = _FakePublisher()
+    configure_activities(
+        ActivityContext(repo=repo, object_store=_FakeObjectStore(), publisher=publisher)
+    )
+
+    await set_status(_input(job_id, tenant_id, dataset_id), "running", 0.5)
+
+    assert len(publisher.messages) == 1
+    channel, message = publisher.messages[0]
+    # Must match the gateway's per-job WS subscription (`f"job:{job_id}"`),
+    # NOT a per-tenant channel -- otherwise live progress never reaches the
+    # `/jobs/{job_id}/stream` websocket.
+    assert channel == f"job:{job_id}"
+    payload = json.loads(message)
+    assert payload["status"] == "running"
+    assert payload["progress"] == 0.5
+
+
+async def test_assemble_and_upload_returns_durable_object_key() -> None:
+    job_id, tenant_id, dataset_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    inp = _input(job_id, tenant_id, dataset_id)
+    store = _FakeObjectStore()
+    table = pa.table({"x": [1, 2, 3]})
+    buf = io.BytesIO()
+    pq.write_table(table, buf)
+    shard_key = f"{inp.tenant_id}/datasets/{inp.dataset_id}/{inp.job_id}/shard-0.parquet"
+    store.data[shard_key] = buf.getvalue()
+    configure_activities(ActivityContext(repo=_FakeDatasetRepository(), object_store=store))
+
+    artifact_key = await assemble_and_upload(inp, [shard_key])
+
+    expected_key = f"{inp.tenant_id}/datasets/{inp.dataset_id}/{inp.job_id}/artifact.parquet"
+    assert artifact_key == expected_key
+    assert not artifact_key.startswith("http://")
+    assert not artifact_key.startswith("https://")
+    # Uploaded under that same durable key -- not just returned as a string.
+    assert artifact_key in store.data
+
+
+async def test_register_version_persists_artifact_key_not_url() -> None:
+    job_id, tenant_id, dataset_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    inp = _input(job_id, tenant_id, dataset_id)
+    repo = _FakeDatasetRepository()
+    configure_activities(ActivityContext(repo=repo, object_store=_FakeObjectStore()))
+    artifact_key = f"{inp.tenant_id}/datasets/{inp.dataset_id}/{inp.job_id}/artifact.parquet"
+
+    await register_version(inp, artifact_key, rows=10)
+
+    assert len(repo.versions) == 1
+    stored = repo.versions[0]
+    assert stored.artifact_uri == artifact_key
+    assert not stored.artifact_uri.startswith("http")
 
 
 async def test_plan_shards_covers_target_rows_in_contiguous_chunks() -> None:

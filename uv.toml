@@ -1,0 +1,4 @@
+# Anodyne uv workspace configuration.
+# Workspace member/dependency config lives in pyproject.toml under [tool.uv.*].
+# This file is reserved for uv-level settings (indexes, resolution, etc.)
+# that apply across the whole workspace.

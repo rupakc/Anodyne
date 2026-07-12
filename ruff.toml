@@ -1,0 +1,11 @@
+line-length = 100
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC"]
+
+[lint.per-file-ignores]
+# FastAPI's DI pattern requires `Depends(...)` as an argument default; this is
+# the framework's idiomatic usage, not the mutable-default-argument bug B008
+# guards against.
+"apps/api-gateway/src/api_gateway/*.py" = ["B008"]

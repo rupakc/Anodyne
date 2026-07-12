@@ -372,6 +372,7 @@ dependencies = [
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "rdt" },
+    { name = "torch" },
 ]
 
 [package.optional-dependencies]
@@ -392,6 +393,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=17" },
     { name = "rdt", specifier = ">=1.12" },
     { name = "sdv", marker = "extra == 'sdv'", specifier = ">=1.15" },
+    { name = "torch", specifier = ">=2.0" },
 ]
 provides-extras = ["sdv"]
 

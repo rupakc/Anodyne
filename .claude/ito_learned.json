@@ -1,0 +1,57 @@
+{
+  "file_read_counts": {},
+  "tool_counts": {
+    "Bash": 460,
+    "Write": 85,
+    "mcp__plugin_context7_context7__resolve-library-id": 3,
+    "mcp__plugin_context7_context7__query-docs": 3,
+    "Edit": 77
+  },
+  "output_growth": 20578.805341903288,
+  "model_patterns": {
+    "power": {
+      "turns": 41,
+      "total_output_chars": 597414
+    }
+  },
+  "lifecycle": {
+    "task_distribution": {
+      "debug": 39,
+      "mixed": 2
+    }
+  },
+  "turn_count": 41,
+  "last_updated": "2026-07-12T11:20:44",
+  "regret_stats": {
+    "reread_after_trim": 3,
+    "total_trims": 3
+  },
+  "large_output_turns": 7,
+  "arm_rewards": {
+    "aggressive": {
+      "n": 3,
+      "sum": 1.780886133247061
+    }
+  },
+  "trim_stats": {
+    "turns": 1,
+    "chars": 25061
+  },
+  "arm_counts": {
+    "aggressive": 3
+  },
+  "command_profiles": {
+    "find": {
+      "avg_chars": 8993.0,
+      "trim_ratio": 0.9258312020460358,
+      "occurrences": 1,
+      "avg_head_lines": 15
+    },
+    "python3": {
+      "avg_chars": 8371.0,
+      "trim_ratio": 0.9209174531119341,
+      "occurrences": 1,
+      "avg_head_lines": 15
+    }
+  }
+}

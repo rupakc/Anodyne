@@ -9,10 +9,11 @@ from anodyne_dataset.models import (
     DatasetVersion,
     FieldSpec,
     GenerationJob,
+    Profile,
 )
 
 if TYPE_CHECKING:
-    import pyarrow  # type: ignore[import-not-found]
+    import pyarrow  # type: ignore[import-not-found, import-untyped, unused-ignore]
 
 
 class DatasetRepository(ABC):
@@ -51,3 +52,27 @@ class Generator(ABC):
 class SchemaProposer(ABC):
     @abstractmethod
     async def propose(self, description: str) -> list[FieldSpec]: ...
+
+
+class SampleProfiler(ABC):
+    """Infers a `Profile` (schema + distributions + correlations) from an uploaded sample.
+
+    Synchronous like `Generator.generate` (CPU-bound); async callers should run it via
+    `asyncio.to_thread`.
+    """
+
+    @abstractmethod
+    def profile(
+        self, tenant_id: UUID, dataset_id: UUID, sample_uri: str, data: bytes, filename: str
+    ) -> Profile: ...
+
+
+class ProfileRepository(ABC):
+    """Persists `Profile`s. Kept separate from `DatasetRepository` so adding it never breaks an
+    existing `DatasetRepository` implementation/fake."""
+
+    @abstractmethod
+    async def save_profile(self, profile: Profile) -> None: ...
+
+    @abstractmethod
+    async def get_profile(self, tenant_id: UUID, dataset_id: UUID) -> Profile | None: ...

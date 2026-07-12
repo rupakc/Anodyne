@@ -1,6 +1,14 @@
 # Local dev backbone for Anodyne: Postgres (app data), Redis (cache/queues),
 # MinIO (S3-compatible object store), Keycloak (OIDC, seeded from
-# ./keycloak/anodyne-realm.json via --import-realm).
+# ./keycloak/anodyne-realm.json via --import-realm), Temporal (workflow
+# orchestration for the generation-worker, backed by the same Postgres),
+# Ray head (distributed task execution), and Ollama (local/offline LLM
+# inference for the demo tenant's model).
+#
+# NOTE: Ray's internal Redis listens on 6379 inside the ray-head container.
+# To avoid a host-port clash with the app `redis` service (also 6379
+# internally), the app `redis` service is published on host port 6380
+# instead (`6380:6379`) — see ANODYNE_REDIS_URL in .env.example.
 #
 # Usage: `make up` / `make down` (see repo root Makefile).
 services:
@@ -29,7 +37,9 @@ services:
 
   redis:
     image: redis:7
-    ports: ["6379:6379"]
+    # Mapped to host 6380 (not 6379) because ray-head's internal Redis also
+    # binds 6379; set ANODYNE_REDIS_URL=redis://localhost:6380/0 on the host.
+    ports: ["6380:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -61,6 +71,48 @@ services:
       - ./keycloak:/opt/keycloak/data/import
     ports: ["8080:8080"]
 
+  # Workflow orchestration for generation_worker; reuses the same Postgres
+  # instance/credentials as the app (separate `temporal` DB created by
+  # auto-setup on first boot).
+  temporal:
+    image: temporalio/auto-setup:1.25
+    depends_on:
+      - postgres
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: postgres
+      POSTGRES_PWD: postgres
+      POSTGRES_SEEDS: postgres
+    ports: ["7233:7233"]
+
+  temporal-ui:
+    image: temporalio/ui:2.31.0
+    depends_on:
+      - temporal
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+    ports: ["8088:8080"]
+
+  # Ray head node for distributed generation/task execution. Ray's internal
+  # Redis binds 6379 inside this container — see the note on `redis` above
+  # for why the app Redis is remapped to host 6380 to avoid a clash.
+  ray-head:
+    image: rayproject/ray:2.35.0
+    command: ray start --head --dashboard-host 0.0.0.0 --block
+    ports: ["8265:8265", "6379:6379", "10001:10001"]
+    shm_size: "2gb"
+
+  # Local/offline LLM inference (e.g. `ollama pull llama3`), used as the
+  # demo tenant's default model so the platform is usable without an
+  # external provider API key. See docs/dev-runbook.md.
+  ollama:
+    image: ollama/ollama:latest
+    ports: ["11434:11434"]
+    volumes:
+      - ollama:/root/.ollama
+
 volumes:
   anodyne-postgres-data:
   anodyne-minio-data:
+  ollama:

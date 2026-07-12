@@ -1,9 +1,10 @@
 # Dev runbook: local backbone → `/llm/invoke`
 
-Requires Docker (Desktop or Engine) with the `compose` plugin. This exact
-flow has **not** been executed in the environment that authored these files
-(no Docker daemon available there — see Task 12 report); validate it here
-before relying on it.
+Requires Docker (Desktop or Engine) with the `compose` plugin, plus `pnpm`
+and `uv` on the host for `make dev`. This exact flow has **not** been
+executed in the environment that authored these files (no Docker daemon
+available there — see Task 12 report); validate it here before relying on
+it.
 
 ## 1. Start the backbone
 
@@ -15,6 +16,17 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 make up
 ```
 
+`make up` now brings up the full backbone: Postgres, Redis (host port
+**6380**, not 6379 — see below), MinIO, Keycloak, **Temporal** (+ Temporal
+UI on 8088), **Ray head**, and **Ollama**.
+
+> **Port note:** Ray's internal Redis binds 6379 inside the `ray-head`
+> container, which would otherwise clash with the app's `redis` service on
+> the host. So `redis` is published on host **6380** instead
+> (`ANODYNE_REDIS_URL=redis://localhost:6380/0` in `.env.example`) — the
+> containers still talk to each other over the compose network on 6379
+> internally; only the host-side mapping changed.
+
 Wait for Keycloak to finish importing the `anodyne` realm — tail its logs
 until you see `Imported realm anodyne` (or just poll the realm's OIDC
 discovery document):
@@ -23,6 +35,18 @@ discovery document):
 until curl -sf http://localhost:8080/realms/anodyne/.well-known/openid-configuration \
     >/dev/null; do sleep 2; done
 ```
+
+Also wait for Temporal to be ready before running the worker (`make dev`
+starts `generation_worker.main`, which connects to Temporal on startup):
+
+```bash
+until curl -sf http://localhost:8088 >/dev/null; do sleep 2; done   # Temporal UI up
+```
+
+Ray's dashboard (http://localhost:8265) and the Ray client port (10001,
+`ANODYNE_RAY_ADDRESS=ray://localhost:10001`) come up quickly once the
+`ray-head` container is healthy; `docker compose ps` should show it as
+`Up`.
 
 ## 2. Migrate + seed
 
@@ -49,14 +73,28 @@ reusing an existing `anodyne-postgres-data` volume from before this role
 split, run `make down` (which removes volumes) and `make up` again so the
 script executes.
 
-## 3. Run the API gateway
+## 3. Run the app processes
 
-The gateway app itself is not in `docker-compose.yml` (only the backbone
-is); run it on the host against the backbone:
+The api-gateway, generation-worker, and web app are not in
+`docker-compose.yml` (only the backbone is) — they run on the host against
+the backbone. Run all three concurrently with:
 
 ```bash
-uv run uvicorn api_gateway.app:create_app --factory --port 8000
+make dev
 ```
+
+This runs, in parallel (Ctrl-C stops all three):
+
+- `uv run uvicorn api_gateway.app:create_app --factory --reload --port 8000`
+- `uv run python -m generation_worker.main` (the Temporal worker for
+  `GenerationWorkflow`; requires Temporal + Ray + Postgres/Redis/MinIO to
+  already be up)
+- `pnpm --dir apps/web dev` (the web UI — not yet present as of this task;
+  until it lands, run just the first two commands by hand instead of
+  `make dev`, e.g. in two terminals)
+
+If you only need the gateway (e.g. for the `curl` walkthrough below),
+running the first command by itself is enough.
 
 ## 4. Get a token for the demo user
 
@@ -110,6 +148,37 @@ a real response requires a valid upstream provider API key in place of
 `sk-REPLACE-ME`; with a fake key the call reaches LiteLLM and fails with a
 provider auth error rather than a 503/404 — that failure mode is itself
 sufficient to confirm the gateway → registry → provider wiring is live.
+
+### External-model path (bring your own API key)
+
+Use this when you have a real upstream provider key (OpenAI, Anthropic,
+etc.) — this is what step 6 above does. `provider` + `model` are passed
+straight through to LiteLLM (`f"{provider}/{model}"`), and `api_key` is
+stored via `secret_ref` (never returned by `/models`). Any LiteLLM-supported
+provider works, e.g. `{"provider":"anthropic","model":"claude-3-5-sonnet-20241022","api_key":"sk-ant-..."}`.
+
+### Offline path (local Ollama, no external API key)
+
+For fully offline/local generation, use the `ollama` container started by
+`make up` (http://localhost:11434, `ANODYNE_OLLAMA_BASE` in
+`.env.example`):
+
+```bash
+# pull a model into the ollama container's volume (one-time, ~4-5GB for llama3)
+docker compose -f infra/docker/docker-compose.yml exec ollama ollama pull llama3
+
+# register it as a model config for the demo tenant — no api_key needed,
+# api_base points at the Ollama container; LiteLLM routes "ollama/llama3"
+# to it.
+curl -s -X POST http://localhost:8000/models \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"name":"llama3-local","provider":"ollama","model":"llama3","api_base":"http://localhost:11434"}'
+```
+
+Then swap `model_config_id` in the `/llm/invoke` call from step 6 to this
+config's `id` to get a real (local, no-cost) completion — no upstream API
+key required, which is the point: the demo tenant is usable end-to-end
+without any external provider credentials.
 
 ## 7. Tear down
 

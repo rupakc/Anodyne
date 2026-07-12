@@ -1,0 +1,16 @@
+[project]
+name = "api-gateway"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = ["anodyne-core", "anodyne-tenancy", "anodyne-storage", "anodyne-llm",
+                "anodyne-observability", "fastapi>=0.115", "uvicorn[standard]>=0.30",
+                "pydantic-settings>=2.4", "pyjwt[crypto]>=2.9"]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+[tool.uv.sources]
+anodyne-core = { workspace = true }
+anodyne-tenancy = { workspace = true }
+anodyne-storage = { workspace = true }
+anodyne-llm = { workspace = true }
+anodyne-observability = { workspace = true }

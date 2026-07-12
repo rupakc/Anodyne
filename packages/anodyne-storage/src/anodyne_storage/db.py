@@ -97,5 +97,9 @@ async def tenant_session(engine: AsyncEngine, tenant_id: UUID) -> AsyncIterator[
     """
     maker = async_sessionmaker(engine, expire_on_commit=False)
     async with maker() as session:
-        await session.execute(text("SET LOCAL app.tenant_id = :tid"), {"tid": str(tenant_id)})
+        # Postgres rejects bind parameters in `SET`/`SET LOCAL`; `set_config(_, _, true)`
+        # is the parameterizable, transaction-local equivalent.
+        await session.execute(
+            text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": str(tenant_id)}
+        )
         yield session

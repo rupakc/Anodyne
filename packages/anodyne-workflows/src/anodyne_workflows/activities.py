@@ -12,16 +12,19 @@ import asyncio
 import io
 import json
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
 import pyarrow as pa  # type: ignore[import-untyped]
 import pyarrow.parquet as pq  # type: ignore[import-untyped]
 import ray
+from anodyne_audio.generator import AudioDatasetGenerator
+from anodyne_audio.models import AudioManifestItem
 from anodyne_compute import remote_generate_shard
 from anodyne_core.ports import ObjectStore
-from anodyne_dataset.models import DatasetVersion, GenerationJob, JobStatus
-from anodyne_dataset.ports import DatasetRepository
+from anodyne_dataset.models import DatasetSpec, DatasetVersion, GenerationJob, JobStatus, Modality
+from anodyne_dataset.ports import AudioProvider, DatasetRepository
 from anodyne_storage.objectstore import S3ObjectStore
 from temporalio import activity
 
@@ -58,6 +61,10 @@ class ActivityContext:
     s3_bucket: str
     s3_client: Any
     publisher: ProgressPublisher | None = None
+    # Resolves a `Modality.AUDIO` DatasetSpec to the tenant's configured
+    # `AudioProvider` (see `generation_worker.audio.AudioProviderFactory`).
+    # `None` in tabular-only wiring/tests -- see `_generate_audio_shards`.
+    audio_provider_factory: Callable[[DatasetSpec], Awaitable[AudioProvider]] | None = None
 
 
 _ctx: ActivityContext | None = None
@@ -92,6 +99,83 @@ def _artifact_key(inp: GenerationInput) -> str:
     return f"datasets/{inp.dataset_id}/{inp.job_id}/artifact.parquet"
 
 
+def _audio_item_key(inp: GenerationInput, index: int, fmt: str) -> str:
+    return f"datasets/{inp.dataset_id}/{inp.job_id}/audio/item-{index}.{fmt}"
+
+
+def _audio_manifest_shard_key(inp: GenerationInput, index: int) -> str:
+    return f"datasets/{inp.dataset_id}/{inp.job_id}/audio/manifest-shard-{index}.json"
+
+
+def _audio_manifest_key(inp: GenerationInput) -> str:
+    return f"datasets/{inp.dataset_id}/{inp.job_id}/manifest.json"
+
+
+async def _generate_audio_shards(
+    ctx: ActivityContext,
+    inp: GenerationInput,
+    spec: DatasetSpec,
+    shards: list[list[int]],
+    store: ObjectStore,
+) -> list[str]:
+    """Audio counterpart to the tabular Ray-shard loop in `generate_shards`.
+
+    Each shard synthesizes its items via the tenant's `AudioProvider`
+    (injected through `ctx.audio_provider_factory`), uploads every clip under
+    its own object key, and uploads a small manifest *fragment* (JSON list of
+    `AudioManifestItem`) for the shard -- mirroring how the tabular path
+    uploads one Parquet fragment per shard. `assemble_and_upload` later merges
+    these fragments into the final `manifest.json`.
+    """
+    if ctx.audio_provider_factory is None:
+        raise RuntimeError(
+            "no audio_provider_factory configured for audio generation; "
+            "see ActivityContext.audio_provider_factory"
+        )
+    provider = await ctx.audio_provider_factory(spec)
+    generator = AudioDatasetGenerator(provider)
+
+    keys: list[str] = []
+    for i, (start, count) in enumerate(shards):
+        pairs = await generator.generate(spec, start, count, inp.seed)
+        manifest_items: list[AudioManifestItem] = []
+        for plan, result in pairs:
+            item_key = _audio_item_key(inp, plan.index, result.format)
+            await store.put(item_key, result.audio_bytes)
+            manifest_items.append(
+                AudioManifestItem(
+                    index=plan.index,
+                    object_key=item_key,
+                    text=plan.request.text,
+                    label=plan.label,
+                    voice=plan.request.voice,
+                    format=result.format,
+                    duration_seconds=result.duration_seconds,
+                )
+            )
+        shard_key = _audio_manifest_shard_key(inp, i)
+        payload = json.dumps([m.model_dump(mode="json") for m in manifest_items])
+        await store.put(shard_key, payload.encode())
+        keys.append(shard_key)
+    return keys
+
+
+async def _assemble_audio_manifest(
+    inp: GenerationInput, keys: list[str], store: ObjectStore
+) -> str:
+    """Merge per-shard manifest fragments into the final `manifest.json`."""
+    items: list[dict[str, Any]] = []
+    for key in keys:
+        data = await store.get(key)
+        items.extend(json.loads(data.decode()))
+    items.sort(key=lambda d: d["index"])
+
+    manifest = {"dataset_id": inp.dataset_id, "job_id": inp.job_id, "items": items}
+    artifact_key = _audio_manifest_key(inp)
+    await store.put(artifact_key, json.dumps(manifest).encode())
+    return artifact_key
+
+
 @activity.defn(name="plan_shards")
 async def plan_shards(inp: GenerationInput) -> list[list[int]]:
     """Split `target_rows` into contiguous [start, count] chunks of `_SHARD_ROWS`."""
@@ -115,6 +199,12 @@ async def generate_shards(inp: GenerationInput, shards: list[list[int]]) -> list
     if spec is None:
         raise ValueError(f"dataset {inp.dataset_id} not found for tenant {inp.tenant_id}")
 
+    # `Generator` is selected by `spec.modality` here: audio gets its own
+    # provider-driven path; every other modality (today: tabular) keeps using
+    # the Ray/TabularSampler loop below unchanged.
+    if spec.modality is Modality.AUDIO:
+        return await _generate_audio_shards(ctx, inp, spec, shards, store)
+
     keys: list[str] = []
     for i, (start, count) in enumerate(shards):
         ref = remote_generate_shard.remote(spec, start, count, inp.seed + i)
@@ -133,7 +223,12 @@ async def assemble_and_upload(inp: GenerationInput, keys: list[str]) -> str:
     what gets persisted as `DatasetVersion.artifact_uri`, and presigning only
     happens later, at download time, in the gateway.
     """
+    ctx = _context()
     store = _object_store(inp)
+    spec = await ctx.repo.get_spec(uuid.UUID(inp.tenant_id), uuid.UUID(inp.dataset_id))
+    if spec is not None and spec.modality is Modality.AUDIO:
+        return await _assemble_audio_manifest(inp, keys, store)
+
     tables = []
     for key in keys:
         data = await store.get(key)
@@ -152,11 +247,14 @@ async def assemble_and_upload(inp: GenerationInput, keys: list[str]) -> str:
 async def register_version(inp: GenerationInput, uri: str, rows: int) -> None:
     """Record the generated artifact as a new `DatasetVersion`."""
     ctx = _context()
+    spec = await ctx.repo.get_spec(uuid.UUID(inp.tenant_id), uuid.UUID(inp.dataset_id))
+    fmt = "audio_manifest" if spec is not None and spec.modality is Modality.AUDIO else "parquet"
     version = DatasetVersion(
         id=uuid.uuid4(),
         tenant_id=uuid.UUID(inp.tenant_id),
         dataset_id=uuid.UUID(inp.dataset_id),
         artifact_uri=uri,
+        format=fmt,
         row_count=rows,
     )
     await ctx.repo.add_version(version)

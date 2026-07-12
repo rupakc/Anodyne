@@ -4,7 +4,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from anodyne_core.models import Role, TenantContext, User
+from anodyne_core.models import ModelConfig, Role, TenantContext, User
 from anodyne_core.ports import ObjectStore
 from anodyne_dataset.models import (
     DatasetSpec,
@@ -121,6 +121,45 @@ class _FakeObjectStore(ObjectStore):
         return []
 
 
+class _FakeModelRegistry:
+    """In-memory stand-in for `deps.ModelRegistry`, seedable per-tenant."""
+
+    def __init__(self) -> None:
+        self.configs: dict[UUID, list[ModelConfig]] = {}
+
+    async def create(
+        self,
+        tenant_id: UUID,
+        *,
+        name: str,
+        provider: str,
+        model: str,
+        api_key: str | None,
+        api_base: str | None,
+        params: dict[str, object],
+    ) -> ModelConfig:
+        cfg = ModelConfig(
+            id=uuid4(),
+            tenant_id=tenant_id,
+            name=name,
+            provider=provider,
+            model=model,
+            params=params,
+            api_base=api_base,
+        )
+        self.configs.setdefault(tenant_id, []).append(cfg)
+        return cfg
+
+    async def get(self, tenant_id: UUID, config_id: UUID) -> ModelConfig | None:
+        return next((c for c in self.configs.get(tenant_id, []) if c.id == config_id), None)
+
+    async def list(self, tenant_id: UUID) -> list[ModelConfig]:
+        return list(self.configs.get(tenant_id, []))
+
+    async def delete(self, tenant_id: UUID, config_id: UUID) -> None:
+        self.configs[tenant_id] = [c for c in self.configs.get(tenant_id, []) if c.id != config_id]
+
+
 class _FakeRedis:
     """Minimal `RedisLike`; pubsub with no queued messages (WS auth tests only)."""
 
@@ -157,6 +196,12 @@ def wired() -> tuple[AsyncClient, Any, _FakeDatasetRepository, _FakeTemporalClie
     app.dependency_overrides[deps.get_temporal_client] = lambda: fake_client
     app.dependency_overrides[deps.get_object_store] = lambda: _FakeObjectStore()
     app.dependency_overrides[deps.get_redis] = lambda: _FakeRedis()
+    # `start_generation` now always injects a `ModelRegistry` (only consulted
+    # for text specs); a fresh empty one is inert for the tabular tests below.
+    # Tests exercising the text path override this again with a seeded,
+    # shared instance -- exactly like `get_schema_proposer` is re-overridden
+    # per-test above.
+    app.dependency_overrides[deps.get_model_registry] = lambda: _FakeModelRegistry()
     client = AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
     return client, app, repo, fake_client
 
@@ -433,3 +478,150 @@ def test_ws_stream_rejects_another_tenants_job() -> None:
     app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.MEMBER, owner_tid)
     with client.websocket_connect(f"/jobs/{job_id}/stream"):
         pass  # connects and stays open -- no immediate close
+
+
+# --- C2: modality="text" on create, model selection on generate --------------
+
+
+async def test_create_dataset_defaults_to_tabular_modality(wired):  # type: ignore[no-untyped-def]
+    client, app, _, _ = wired
+    app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.MEMBER, uuid4())
+
+    r = await client.post("/datasets", json={"name": "d", "description": "x", "target_rows": 10})
+
+    assert r.status_code == 201
+    assert r.json()["modality"] == "tabular"
+
+
+async def test_create_dataset_with_text_modality(wired):  # type: ignore[no-untyped-def]
+    client, app, repo, _ = wired
+    tid = uuid4()
+    app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.MEMBER, tid)
+
+    r = await client.post(
+        "/datasets",
+        json={
+            "name": "tickets",
+            "description": "support tickets",
+            "target_rows": 100,
+            "modality": "text",
+        },
+    )
+
+    assert r.status_code == 201
+    body = r.json()
+    assert body["modality"] == "text"
+    assert repo.specs[UUID(body["id"])].modality == "text"
+
+
+async def test_generate_text_dataset_without_registered_model_returns_400(wired):  # type: ignore[no-untyped-def]
+    client, app, _, fake_client = wired
+    tid = uuid4()
+    app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.MEMBER, tid)
+    app.dependency_overrides[deps.get_model_registry] = lambda: _FakeModelRegistry()
+
+    created = await client.post(
+        "/datasets",
+        json={"name": "d", "description": "x", "target_rows": 10, "modality": "text"},
+    )
+    dataset_id = created.json()["id"]
+
+    r = await client.post(f"/datasets/{dataset_id}/generate", json={"seed": 0})
+
+    assert r.status_code == 400
+    assert not fake_client.calls
+
+
+async def test_generate_text_dataset_defaults_to_first_registered_model(wired):  # type: ignore[no-untyped-def]
+    client, app, _, fake_client = wired
+    tid = uuid4()
+    app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.MEMBER, tid)
+    registry = _FakeModelRegistry()
+    cfg = await registry.create(
+        tid, name="m", provider="ollama", model="llama3", api_key=None, api_base=None, params={}
+    )
+    app.dependency_overrides[deps.get_model_registry] = lambda: registry
+
+    created = await client.post(
+        "/datasets",
+        json={"name": "d", "description": "x", "target_rows": 10, "modality": "text"},
+    )
+    dataset_id = created.json()["id"]
+
+    r = await client.post(f"/datasets/{dataset_id}/generate", json={"seed": 3})
+
+    assert r.status_code == 202
+    inp = fake_client.calls[0]["arg"]
+    assert isinstance(inp, GenerationInput)
+    assert inp.model_config_id == str(cfg.id)
+
+
+async def test_generate_text_dataset_rejects_unowned_model_config_id(wired):  # type: ignore[no-untyped-def]
+    client, app, _, fake_client = wired
+    tid = uuid4()
+    app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.MEMBER, tid)
+    app.dependency_overrides[deps.get_model_registry] = lambda: _FakeModelRegistry()
+
+    created = await client.post(
+        "/datasets",
+        json={"name": "d", "description": "x", "target_rows": 10, "modality": "text"},
+    )
+    dataset_id = created.json()["id"]
+
+    r = await client.post(
+        f"/datasets/{dataset_id}/generate",
+        json={"seed": 0, "model_config_id": str(uuid4())},
+    )
+
+    assert r.status_code == 400
+    assert not fake_client.calls
+
+
+async def test_generate_text_dataset_uses_explicit_model_config_id(wired):  # type: ignore[no-untyped-def]
+    client, app, _, fake_client = wired
+    tid = uuid4()
+    app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.MEMBER, tid)
+    registry = _FakeModelRegistry()
+    cfg1 = await registry.create(
+        tid, name="m1", provider="ollama", model="llama3", api_key=None, api_base=None, params={}
+    )
+    cfg2 = await registry.create(
+        tid, name="m2", provider="ollama", model="mistral", api_key=None, api_base=None, params={}
+    )
+    app.dependency_overrides[deps.get_model_registry] = lambda: registry
+
+    created = await client.post(
+        "/datasets",
+        json={"name": "d", "description": "x", "target_rows": 10, "modality": "text"},
+    )
+    dataset_id = created.json()["id"]
+
+    r = await client.post(
+        f"/datasets/{dataset_id}/generate",
+        json={"seed": 0, "model_config_id": str(cfg2.id)},
+    )
+
+    assert r.status_code == 202
+    inp = fake_client.calls[0]["arg"]
+    assert inp.model_config_id == str(cfg2.id)
+    assert inp.model_config_id != str(cfg1.id)
+
+
+async def test_generate_tabular_dataset_ignores_model_registry(wired):  # type: ignore[no-untyped-def]
+    # Regression: tabular generation must not require any registered model --
+    # the registry is injected but never consulted for this modality.
+    client, app, _, fake_client = wired
+    tid = uuid4()
+    app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.MEMBER, tid)
+    app.dependency_overrides[deps.get_model_registry] = lambda: _FakeModelRegistry()
+
+    created = await client.post(
+        "/datasets", json={"name": "d", "description": "x", "target_rows": 10}
+    )
+    dataset_id = created.json()["id"]
+
+    r = await client.post(f"/datasets/{dataset_id}/generate", json={"seed": 0})
+
+    assert r.status_code == 202
+    inp = fake_client.calls[0]["arg"]
+    assert inp.model_config_id is None

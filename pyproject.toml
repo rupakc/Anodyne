@@ -13,7 +13,7 @@ dev = ["pytest>=8", "pytest-asyncio>=0.24", "mypy>=1.11", "ruff>=0.6",
        "httpx>=0.27", "moto>=5", "testcontainers[postgres]>=4", "anodyne-core",
        "anodyne-tenancy", "anodyne-storage", "anodyne-observability", "anodyne-llm",
        "anodyne-dataset", "anodyne-generation", "anodyne-compute", "anodyne-workflows",
-       "api-gateway", "generation-worker"]
+       "anodyne-video", "api-gateway", "generation-worker"]
 
 [tool.uv.sources]
 anodyne-core = { workspace = true }
@@ -25,6 +25,7 @@ anodyne-dataset = { workspace = true }
 anodyne-generation = { workspace = true }
 anodyne-compute = { workspace = true }
 anodyne-workflows = { workspace = true }
+anodyne-video = { workspace = true }
 api-gateway = { workspace = true }
 generation-worker = { workspace = true }
 

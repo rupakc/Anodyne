@@ -17,6 +17,7 @@ members = [
     "anodyne-observability",
     "anodyne-storage",
     "anodyne-tenancy",
+    "anodyne-video",
     "anodyne-workflows",
     "api-gateway",
     "generation-worker",
@@ -191,6 +192,7 @@ dev = [
     { name = "anodyne-observability" },
     { name = "anodyne-storage" },
     { name = "anodyne-tenancy" },
+    { name = "anodyne-video" },
     { name = "anodyne-workflows" },
     { name = "api-gateway" },
     { name = "generation-worker" },
@@ -215,6 +217,7 @@ dev = [
     { name = "anodyne-observability", editable = "packages/anodyne-observability" },
     { name = "anodyne-storage", editable = "packages/anodyne-storage" },
     { name = "anodyne-tenancy", editable = "packages/anodyne-tenancy" },
+    { name = "anodyne-video", editable = "packages/anodyne-video" },
     { name = "anodyne-workflows", editable = "packages/anodyne-workflows" },
     { name = "api-gateway", editable = "apps/api-gateway" },
     { name = "generation-worker", editable = "apps/generation-worker" },
@@ -367,6 +370,29 @@ requires-dist = [
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9" },
+]
+
+[[package]]
+name = "anodyne-video"
+version = "0.1.0"
+source = { editable = "packages/anodyne-video" }
+dependencies = [
+    { name = "anodyne-core" },
+    { name = "anodyne-dataset" },
+    { name = "anodyne-storage" },
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "sqlalchemy", extra = ["asyncio"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anodyne-core", editable = "packages/anodyne-core" },
+    { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "anodyne-storage", editable = "packages/anodyne-storage" },
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "pydantic", specifier = ">=2.8" },
+    { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2" },
 ]
 
 [[package]]

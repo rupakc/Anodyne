@@ -12,7 +12,7 @@ from anodyne_dataset.models import (
 )
 
 if TYPE_CHECKING:
-    import pyarrow  # type: ignore[import-not-found]
+    import pyarrow  # type: ignore[import-untyped]
 
 
 class DatasetRepository(ABC):

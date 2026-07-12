@@ -31,6 +31,24 @@ make migrate   # alembic upgrade head against Postgres
 make seed      # upserts the demo tenant (id 11111111-1111-1111-1111-111111111111)
 ```
 
+Two Postgres roles are involved here, deliberately (see
+`infra/docker/postgres/init/01-app-role.sql` and `.env.example`):
+
+- `postgres` — the bootstrap SUPERUSER (owns the tables). `make migrate`
+  connects as this role (`ANODYNE_DB_DSN`) because Alembic needs owner
+  privileges to create/alter schema and RLS policies.
+- `anodyne_app` — a non-superuser role, created by the init script the first
+  time the `postgres` container starts against an empty volume. `make seed`
+  and the api-gateway app itself connect as this role (`ANODYNE_DATABASE_URL`)
+  so that Postgres row-level security is actually enforced at runtime:
+  superusers (and any role with `BYPASSRLS`) ignore RLS even when a table has
+  `FORCE ROW LEVEL SECURITY` set, so the app must never run as `postgres`.
+
+The init script only runs against a fresh, empty data volume. If you're
+reusing an existing `anodyne-postgres-data` volume from before this role
+split, run `make down` (which removes volumes) and `make up` again so the
+script executes.
+
 ## 3. Run the API gateway
 
 The gateway app itself is not in `docker-compose.yml` (only the backbone

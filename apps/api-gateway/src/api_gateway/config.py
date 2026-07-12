@@ -5,7 +5,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ANODYNE_", env_file=".env")
-    database_url: str = "postgresql+asyncpg://app:app@localhost:5432/anodyne"
+    # Non-superuser runtime role (`anodyne_app`), NOT the `postgres` migration
+    # superuser — see .env.example and docs/dev-runbook.md. Superusers bypass
+    # row-level security even with FORCE ROW LEVEL SECURITY, so the app must
+    # never connect as `postgres`.
+    database_url: str = "postgresql+asyncpg://anodyne_app:anodyne_app@localhost:5432/anodyne"
     oidc_issuer: str = "http://localhost:8080/realms/anodyne"
     oidc_jwks_url: str = "http://localhost:8080/realms/anodyne/protocol/openid-connect/certs"
     oidc_audience: str = "anodyne"

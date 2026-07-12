@@ -4,17 +4,25 @@
 #
 # Usage: `make up` / `make down` (see repo root Makefile).
 services:
+  # Bootstrap user is the `postgres` SUPERUSER (used only for migrations, via
+  # ANODYNE_DB_DSN, since Alembic needs owner privileges to create/alter
+  # tables and RLS policies). The app itself connects as the non-superuser
+  # `anodyne_app` role (created by ./postgres/init/01-app-role.sql on first
+  # boot) so Postgres row-level security is actually enforced at runtime —
+  # superusers, and roles with BYPASSRLS, ignore RLS even with FORCE ROW
+  # LEVEL SECURITY. See docs/dev-runbook.md and .env.example.
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: app
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: anodyne
     ports: ["5432:5432"]
     volumes:
       - anodyne-postgres-data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app -d anodyne"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d anodyne"]
       interval: 5s
       timeout: 5s
       retries: 10

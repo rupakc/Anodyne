@@ -69,18 +69,34 @@ class SqlModelRegistry:
         )
 
     async def get(self, tenant_id: UUID, config_id: UUID) -> ModelConfig | None:
+        # Explicit tenant_id filter is defense-in-depth: Postgres RLS
+        # (tenant_session's `app.tenant_id` GUC) is the primary isolation
+        # boundary, but cross-tenant access must be impossible even if RLS is
+        # ever misconfigured, disabled, or bypassed (e.g. a superuser DSN).
         async with tenant_session(self._engine, tenant_id) as s:
             row = (
-                await s.execute(select(model_configs).where(model_configs.c.id == config_id))
+                await s.execute(
+                    select(model_configs).where(
+                        model_configs.c.id == config_id,
+                        model_configs.c.tenant_id == tenant_id,
+                    )
+                )
             ).first()
             return _row_to_config(row) if row else None
 
     async def list(self, tenant_id: UUID) -> list[ModelConfig]:
         async with tenant_session(self._engine, tenant_id) as s:
-            rows = (await s.execute(select(model_configs))).all()
+            rows = (
+                await s.execute(select(model_configs).where(model_configs.c.tenant_id == tenant_id))
+            ).all()
             return [_row_to_config(r) for r in rows]
 
     async def delete(self, tenant_id: UUID, config_id: UUID) -> None:
         async with tenant_session(self._engine, tenant_id) as s:
-            await s.execute(delete(model_configs).where(model_configs.c.id == config_id))
+            await s.execute(
+                delete(model_configs).where(
+                    model_configs.c.id == config_id,
+                    model_configs.c.tenant_id == tenant_id,
+                )
+            )
             await s.commit()

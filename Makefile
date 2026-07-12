@@ -9,6 +9,13 @@
 # `-include .env` + `export` make any vars copied from .env.example (DB DSN,
 # OIDC settings, ANODYNE_SECRET_KEY, ...) visible to the recipes below,
 # mirroring how the api-gateway process picks them up at runtime.
+#
+# Two separate DSNs, deliberately: `migrate` runs Alembic against
+# ANODYNE_DB_DSN (the `postgres` superuser — owns the tables/RLS policies);
+# `seed` and the app itself run against ANODYNE_DATABASE_URL (the
+# non-superuser `anodyne_app` role — see infra/docker/postgres/init and
+# .env.example). Superusers bypass row-level security even with FORCE ROW
+# LEVEL SECURITY, so the app must never use the migration DSN.
 -include .env
 export
 

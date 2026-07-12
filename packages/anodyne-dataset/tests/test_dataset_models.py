@@ -1,6 +1,9 @@
 from uuid import uuid4
 
+import pytest
 from anodyne_dataset.models import (
+    AudioSynthesisRequest,
+    AudioSynthesisResult,
     DatasetSpec,
     FieldSpec,
     GenerationJob,
@@ -8,6 +11,7 @@ from anodyne_dataset.models import (
     Modality,
     SemanticType,
 )
+from anodyne_dataset.ports import AudioProvider
 
 
 def test_fieldspec_defaults() -> None:
@@ -32,3 +36,24 @@ def test_datasetspec_is_tabular_description() -> None:
 def test_job_progress_bounds() -> None:
     j = GenerationJob(id=uuid4(), tenant_id=uuid4(), dataset_id=uuid4())
     assert j.status is JobStatus.PENDING and j.progress == 0.0
+
+
+def test_audio_synthesis_request_defaults() -> None:
+    r = AudioSynthesisRequest(text="hello")
+    assert r.voice is None and r.language is None
+
+
+def test_audio_synthesis_result_defaults_to_wav() -> None:
+    res = AudioSynthesisResult(audio_bytes=b"\x00\x01")
+    assert res.format == "wav" and res.duration_seconds is None
+
+
+async def test_audio_provider_is_an_abstract_async_contract() -> None:
+    class _Echo(AudioProvider):
+        async def synthesize(self, request: AudioSynthesisRequest) -> AudioSynthesisResult:
+            return AudioSynthesisResult(audio_bytes=request.text.encode())
+
+    out = await _Echo().synthesize(AudioSynthesisRequest(text="hi"))
+    assert out.audio_bytes == b"hi"
+    with pytest.raises(TypeError):
+        AudioProvider()  # type: ignore[abstract]

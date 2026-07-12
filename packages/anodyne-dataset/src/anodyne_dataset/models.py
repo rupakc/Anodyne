@@ -82,3 +82,19 @@ class ShardArtifact(BaseModel):
     shard_index: int
     object_key: str
     row_count: int
+
+
+class AudioSynthesisRequest(BaseModel):
+    """A single text-to-speech synthesis request, passed to an `AudioProvider`."""
+
+    text: str
+    voice: str | None = None
+    language: str | None = None
+
+
+class AudioSynthesisResult(BaseModel):
+    """The audio produced for one `AudioSynthesisRequest`."""
+
+    audio_bytes: bytes
+    format: str = "wav"
+    duration_seconds: float | None = None

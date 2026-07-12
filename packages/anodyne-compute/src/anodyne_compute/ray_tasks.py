@@ -5,11 +5,16 @@ import io
 import pyarrow.parquet as pq  # type: ignore[import-untyped]
 import ray
 from anodyne_dataset.models import DatasetSpec
+from anodyne_generation.directives import DirectiveGenerator
 from anodyne_generation.sampler import TabularSampler
 
 
 def generate_shard_bytes(spec: DatasetSpec, start_row: int, count: int, seed: int) -> bytes:
     """Generate Parquet bytes for a data shard.
+
+    Wraps `TabularSampler` in a `DirectiveGenerator` (C6) so any `GenerationDirective`s on
+    `spec.directives` (bias/edge-case/use-case steering) are applied to the sampled rows; a
+    directive-free spec is unaffected -- `TabularSampler` itself is untouched.
 
     Args:
         spec: Dataset specification defining the schema and generation parameters.
@@ -20,7 +25,7 @@ def generate_shard_bytes(spec: DatasetSpec, start_row: int, count: int, seed: in
     Returns:
         Parquet-encoded bytes for the generated shard.
     """
-    table = TabularSampler().generate(spec, start_row, count, seed)
+    table = DirectiveGenerator(TabularSampler()).generate(spec, start_row, count, seed)
     buf = io.BytesIO()
     pq.write_table(table, buf)
     return buf.getvalue()

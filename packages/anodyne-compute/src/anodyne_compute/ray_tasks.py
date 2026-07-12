@@ -42,12 +42,20 @@ def remote_generate_shard(spec: DatasetSpec, start_row: int, count: int, seed: i
     return generate_shard_bytes(spec, start_row, count, seed)
 
 
-def ray_init(address: str | None) -> None:
-    """Initialize Ray cluster if not already initialized.
+def ray_init(address: str) -> None:
+    """Initialize Ray for this process, connecting to a remote cluster if configured.
 
     Args:
-        address: Ray cluster address. If None or "auto", uses default.
-                 Pass None for local mode in tests.
+        address: Ray cluster address to connect to, e.g. "ray://host:10001".
+            If falsy (e.g. ``""``), a local Ray instance is started instead
+            (single-process dev/test runs). Idempotent: a no-op if Ray is
+            already initialized in this process (guarded on
+            `ray.is_initialized()`), so it's safe to call at worker startup
+            without racing a prior/concurrent initialization.
     """
-    if not ray.is_initialized():
-        ray.init(address=address or "auto", ignore_reinit_error=True)
+    if ray.is_initialized():
+        return
+    if address:
+        ray.init(address=address)
+    else:
+        ray.init()

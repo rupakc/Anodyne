@@ -19,6 +19,7 @@ members = [
     "anodyne-tenancy",
     "anodyne-workflows",
     "api-gateway",
+    "generation-worker",
 ]
 
 [[package]]
@@ -192,6 +193,7 @@ dev = [
     { name = "anodyne-tenancy" },
     { name = "anodyne-workflows" },
     { name = "api-gateway" },
+    { name = "generation-worker" },
     { name = "httpx" },
     { name = "moto" },
     { name = "mypy" },
@@ -215,6 +217,7 @@ dev = [
     { name = "anodyne-tenancy", editable = "packages/anodyne-tenancy" },
     { name = "anodyne-workflows", editable = "packages/anodyne-workflows" },
     { name = "api-gateway", editable = "apps/api-gateway" },
+    { name = "generation-worker", editable = "apps/generation-worker" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "moto", specifier = ">=5" },
     { name = "mypy", specifier = ">=1.11" },
@@ -983,6 +986,33 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/10/a1/ae4e3e5003468d6391d2c77b6fa1cd73bd5d13511d81c642d7b28ac90ed4/fsspec-2026.6.0.tar.gz", hash = "sha256:f5bac145310fe30e16e1471bd6840b2d990d609e872251d7e674241822abf01a", size = 313646, upload-time = "2026-06-16T01:57:28.105Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/e5/22/4222d7ddf3da30f363edaa98e329c2bce6c65497c9cb2810931c8b2c0fbc/fsspec-2026.6.0-py3-none-any.whl", hash = "sha256:02e0b71817df9b2169dc30a16832045764def1191b43dcff5bb85bdee212d2a1", size = 203949, upload-time = "2026-06-16T01:57:26.358Z" },
+]
+
+[[package]]
+name = "generation-worker"
+version = "0.1.0"
+source = { editable = "apps/generation-worker" }
+dependencies = [
+    { name = "anodyne-compute" },
+    { name = "anodyne-core" },
+    { name = "anodyne-dataset" },
+    { name = "anodyne-storage" },
+    { name = "anodyne-workflows" },
+    { name = "pydantic-settings" },
+    { name = "redis" },
+    { name = "temporalio" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anodyne-compute", editable = "packages/anodyne-compute" },
+    { name = "anodyne-core", editable = "packages/anodyne-core" },
+    { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "anodyne-storage", editable = "packages/anodyne-storage" },
+    { name = "anodyne-workflows", editable = "packages/anodyne-workflows" },
+    { name = "pydantic-settings", specifier = ">=2.4" },
+    { name = "redis", specifier = ">=5" },
+    { name = "temporalio", specifier = ">=1.7" },
 ]
 
 [[package]]
@@ -2334,6 +2364,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/82/a0/07a00091cf002662946ed2a16fe4b27c80be6fce7fc831e41c7e1471e2f7/ray-2.56.0-cp314-cp314-macosx_12_0_arm64.whl", hash = "sha256:f38e03b77c53e3d94091aedb84b14efe7ee5b581d85b7d13925066bcd48c44a2", size = 66298834, upload-time = "2026-06-29T20:51:36.82Z" },
     { url = "https://files.pythonhosted.org/packages/30/3c/2819cc8b40bf4034ff871c18d04a0422b7b0a51b32260c6f03a06460aaa5/ray-2.56.0-cp314-cp314-manylinux2014_aarch64.whl", hash = "sha256:c3a16d43d75283a3d64fa1d904a3adaf3f526f3f508f447505b8bb8dc70bad6c", size = 73242922, upload-time = "2026-06-29T20:51:42.467Z" },
     { url = "https://files.pythonhosted.org/packages/d5/5b/33ac5616706d1bc0bd40e22baf12acccd687b505f85d107f549355379d6f/ray-2.56.0-cp314-cp314-manylinux2014_x86_64.whl", hash = "sha256:73edb6fb5fd05481b1f358ac2e8a4c7f6a031d89f9b823d25a587ddb7529070f", size = 74099117, upload-time = "2026-06-29T20:51:48.19Z" },
+]
+
+[[package]]
+name = "redis"
+version = "8.0.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/cc/c3/928b290c2c0ca99ab96eea5b4ff8f30be8112b075301a7d3ba214a3c8c12/redis-8.0.1.tar.gz", hash = "sha256:afc5a7a2f5a084f5b1880dec548dd45be17db7e43c82a30d84f952aefb05cfb0", size = 5114170, upload-time = "2026-06-23T14:52:37.728Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fd/0a/c2345ebf1ebe70840ce3f6c6ee612f8fa749cfbd1b03069c53bf0c62aaad/redis-8.0.1-py3-none-any.whl", hash = "sha256:47daa35a058c23468d6437f17a8c76882cb316b838ef763036af99b96cedd743", size = 502406, upload-time = "2026-06-23T14:52:36.137Z" },
 ]
 
 [[package]]

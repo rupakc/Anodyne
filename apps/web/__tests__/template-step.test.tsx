@@ -8,6 +8,7 @@ afterEach(cleanup);
 
 import { TemplateStep } from "@/app/app/new/template-step";
 import type { ApiClient, DatasetSpec, DatasetTemplate } from "@/lib/api";
+import { baseMockApi } from "./mock-api";
 
 const TEMPLATES: DatasetTemplate[] = [
   {
@@ -49,19 +50,11 @@ const CREATED_SPEC: DatasetSpec = {
 };
 
 function makeMockApi(overrides: Partial<ApiClient> = {}): ApiClient {
-  return {
-    createDataset: vi.fn(),
-    listDatasets: vi.fn(),
-    getDataset: vi.fn(),
-    updateDataset: vi.fn(),
-    generate: vi.fn(),
-    getJob: vi.fn(),
-    listVersions: vi.fn(),
-    downloadUrl: vi.fn(),
+  return baseMockApi({
     listTemplates: vi.fn().mockResolvedValue(TEMPLATES),
     createFromTemplate: vi.fn().mockResolvedValue(CREATED_SPEC),
     ...overrides,
-  };
+  });
 }
 
 describe("TemplateStep", () => {

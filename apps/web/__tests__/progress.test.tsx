@@ -8,6 +8,7 @@ afterEach(cleanup);
 import { JobProgressView } from "@/app/app/jobs/[id]/job-progress-view";
 import type { WebSocketLike } from "@/lib/use-job-progress";
 import type { ApiClient, GenerationJob } from "@/lib/api";
+import { baseMockApi } from "./mock-api";
 
 /** A controllable fake WS: the test drives it directly via the handlers it captures. */
 class FakeSocket implements WebSocketLike {
@@ -33,19 +34,10 @@ const INITIAL_JOB: GenerationJob = {
 };
 
 function makeMockApi(overrides: Partial<ApiClient> = {}): ApiClient {
-  return {
-    createDataset: vi.fn(),
-    listDatasets: vi.fn(),
-    getDataset: vi.fn(),
-    updateDataset: vi.fn(),
-    generate: vi.fn(),
+  return baseMockApi({
     getJob: vi.fn().mockResolvedValue(INITIAL_JOB),
-    listVersions: vi.fn(),
-    downloadUrl: vi.fn(),
-    listTemplates: vi.fn(),
-    createFromTemplate: vi.fn(),
     ...overrides,
-  };
+  });
 }
 
 describe("job progress view", () => {

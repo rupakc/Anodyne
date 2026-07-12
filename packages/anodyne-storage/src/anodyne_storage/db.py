@@ -12,7 +12,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from uuid import UUID
 
-from sqlalchemy import Column, MetaData, String, Table, Text, text
+from sqlalchemy import Column, Float, Integer, MetaData, String, Table, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PgUUID
 from sqlalchemy.ext.asyncio import (
@@ -57,6 +57,45 @@ model_configs = Table(
     Column("enabled", String, nullable=False, server_default="true"),
 )
 
+datasets = Table(
+    "datasets",
+    metadata,
+    Column("id", PgUUID(as_uuid=True), primary_key=True),
+    Column("tenant_id", PgUUID(as_uuid=True), nullable=False),
+    Column("name", String, nullable=False),
+    Column("description", Text, nullable=False),
+    Column("modality", String, nullable=False),
+    Column("source", String, nullable=False),
+    Column("field_specs", JSONB, nullable=False, server_default="[]"),
+    Column("target_rows", Integer, nullable=False),
+    Column("directives", JSONB, nullable=False, server_default="{}"),
+    Column("status", String, nullable=False, server_default="draft"),
+)
+
+generation_jobs = Table(
+    "generation_jobs",
+    metadata,
+    Column("id", PgUUID(as_uuid=True), primary_key=True),
+    Column("tenant_id", PgUUID(as_uuid=True), nullable=False),
+    Column("dataset_id", PgUUID(as_uuid=True), nullable=False),
+    Column("status", String, nullable=False, server_default="pending"),
+    Column("progress", Float, nullable=False, server_default="0.0"),
+    Column("message", Text, nullable=False, server_default=""),
+    Column("workflow_id", String, nullable=True),
+)
+
+dataset_versions = Table(
+    "dataset_versions",
+    metadata,
+    Column("id", PgUUID(as_uuid=True), primary_key=True),
+    Column("tenant_id", PgUUID(as_uuid=True), nullable=False),
+    Column("dataset_id", PgUUID(as_uuid=True), nullable=False),
+    Column("artifact_uri", String, nullable=False),
+    Column("format", String, nullable=False, server_default="parquet"),
+    Column("row_count", Integer, nullable=False, server_default="0"),
+    Column("checksum", String, nullable=False, server_default=""),
+)
+
 # Tenant-scoped tables get an RLS policy keyed on the per-transaction
 # app.tenant_id GUC. `tenants` is keyed by its own `id`; everything else by
 # its `tenant_id` foreign key.
@@ -64,6 +103,9 @@ _TENANT_TABLES: dict[str, str] = {
     "tenants": "id",
     "users": "tenant_id",
     "model_configs": "tenant_id",
+    "datasets": "tenant_id",
+    "generation_jobs": "tenant_id",
+    "dataset_versions": "tenant_id",
 }
 
 

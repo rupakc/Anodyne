@@ -2,7 +2,7 @@
 name = "anodyne-storage"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["anodyne-core", "cryptography>=43", "boto3>=1.35",
+dependencies = ["anodyne-core", "anodyne-dataset", "cryptography>=43", "boto3>=1.35",
                 "sqlalchemy[asyncio]>=2.0", "asyncpg>=0.29", "alembic>=1.13"]
 
 [build-system]
@@ -11,3 +11,4 @@ build-backend = "hatchling.build"
 
 [tool.uv.sources]
 anodyne-core = { workspace = true }
+anodyne-dataset = { workspace = true }

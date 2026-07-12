@@ -5,6 +5,17 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["__tests__/**/*.test.ts"],
+    server: {
+      // `next-auth`'s main entry does `import ... from "next/server"`
+      // (no extension). Next.js's package.json has no `exports` map, so
+      // under Node's native ESM resolution (used when a dep is externalized
+      // by Vitest's SSR pipeline) that extensionless specifier fails to
+      // resolve. Forcing next-auth through Vite's own resolver (which does
+      // resolve extensionless subpaths) sidesteps the issue.
+      deps: {
+        inline: ["next-auth"],
+      },
+    },
   },
   resolve: {
     alias: {

@@ -90,9 +90,25 @@ This runs, in parallel (Ctrl-C stops all three):
 - `uv run python -m generation_worker.main` (the Temporal worker for
   `GenerationWorkflow`; requires Temporal + Ray + Postgres/Redis/MinIO to
   already be up)
-- `pnpm --dir apps/web dev` (the web UI — not yet present as of this task;
-  until it lands, run just the first two commands by hand instead of
-  `make dev`, e.g. in two terminals)
+- `pnpm --dir apps/web dev` (the web UI)
+
+Before running the web app, create `apps/web/.env.local` (git-ignored, not
+checked in) with the Auth.js / Keycloak login config it reads from
+`process.env` (see `apps/web/auth.ts`):
+
+```bash
+# apps/web/.env.local
+AUTH_SECRET=<openssl rand -base64 32>
+KEYCLOAK_ISSUER=http://localhost:8080/realms/anodyne     # default if unset
+KEYCLOAK_CLIENT_ID=anodyne                                # default if unset
+KEYCLOAK_CLIENT_SECRET=dev-only-anodyne-client-secret     # from infra/docker/keycloak/anodyne-realm.json, dev-only
+```
+
+`AUTH_SECRET` and `KEYCLOAK_CLIENT_SECRET` are required — without them,
+Auth.js will fail to sign session JWTs / authenticate against Keycloak.
+`KEYCLOAK_ISSUER` and `KEYCLOAK_CLIENT_ID` fall back to the defaults shown
+above (the local `anodyne` realm/client), so they only need to be set to
+point at a different Keycloak instance.
 
 If you only need the gateway (e.g. for the `curl` walkthrough below),
 running the first command by itself is enough.

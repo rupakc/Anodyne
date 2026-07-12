@@ -15,15 +15,26 @@ pytestmark = pytest.mark.integration
 @pytest_asyncio.fixture
 async def engine():  # type: ignore[no-untyped-def]
     with PostgresContainer("postgres:16") as pg:
-        eng = make_engine(pg.get_connection_url().replace("psycopg2", "asyncpg"))
-        async with eng.begin() as conn:
+        admin_dsn = pg.get_connection_url().replace("psycopg2", "asyncpg")
+        # Bootstrap as the superuser: create schema, RLS policies, and a
+        # non-superuser login role that IS subject to RLS. (asyncpg rejects
+        # multiple commands in one prepared statement, so each is a separate
+        # execute; superusers bypass RLS even under FORCE, so the registry
+        # sessions must run as the non-superuser role.)
+        admin_eng = make_engine(admin_dsn)
+        async with admin_eng.begin() as conn:
             await conn.run_sync(metadata.create_all)
             await apply_rls(conn)
-            await conn.execute(
-                text("CREATE ROLE app LOGIN; GRANT ALL ON ALL TABLES IN SCHEMA public TO app;")
-            )
-        yield eng
-        await eng.dispose()
+            await conn.execute(text("CREATE ROLE app LOGIN PASSWORD 'app'"))
+            await conn.execute(text("GRANT USAGE ON SCHEMA public TO app"))
+            await conn.execute(text("GRANT ALL ON ALL TABLES IN SCHEMA public TO app"))
+        await admin_eng.dispose()
+
+        # Registry operations run as `app` so row-level security applies.
+        app_dsn = admin_dsn.replace(f"//{pg.username}:{pg.password}@", "//app:app@")
+        app_eng = make_engine(app_dsn)
+        yield app_eng
+        await app_eng.dispose()
 
 
 async def test_create_encrypts_key_and_isolates_tenants(engine):  # type: ignore[no-untyped-def]

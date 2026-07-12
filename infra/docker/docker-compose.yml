@@ -2,13 +2,12 @@
 # MinIO (S3-compatible object store), Keycloak (OIDC, seeded from
 # ./keycloak/anodyne-realm.json via --import-realm), Temporal (workflow
 # orchestration for the generation-worker, backed by the same Postgres),
-# Ray head (distributed task execution), and Ollama (local/offline LLM
-# inference for the demo tenant's model).
+# Ray head (distributed task execution, reached via the Ray client port
+# 10001), and Ollama (local/offline LLM inference for the demo tenant's model).
 #
-# NOTE: Ray's internal Redis listens on 6379 inside the ray-head container.
-# To avoid a host-port clash with the app `redis` service (also 6379
-# internally), the app `redis` service is published on host port 6380
-# instead (`6380:6379`) — see ANODYNE_REDIS_URL in .env.example.
+# NOTE: ray-head's internal Redis (6379) is NOT published to the host — the
+# generation-worker connects via the Ray client port (10001), so the app
+# `redis` service keeps host port 6379 with no clash.
 #
 # Usage: `make up` / `make down` (see repo root Makefile).
 services:
@@ -37,9 +36,7 @@ services:
 
   redis:
     image: redis:7
-    # Mapped to host 6380 (not 6379) because ray-head's internal Redis also
-    # binds 6379; set ANODYNE_REDIS_URL=redis://localhost:6380/0 on the host.
-    ports: ["6380:6379"]
+    ports: ["6379:6379"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -95,12 +92,12 @@ services:
     ports: ["8088:8080"]
 
   # Ray head node for distributed generation/task execution. Ray's internal
-  # Redis binds 6379 inside this container — see the note on `redis` above
-  # for why the app Redis is remapped to host 6380 to avoid a clash.
+  # ray-head's internal Redis (6379) stays unpublished; workers use the Ray
+  # client port 10001. Only the dashboard (8265) and client (10001) are exposed.
   ray-head:
     image: rayproject/ray:2.35.0
     command: ray start --head --dashboard-host 0.0.0.0 --block
-    ports: ["8265:8265", "6379:6379", "10001:10001"]
+    ports: ["8265:8265", "10001:10001"]
     shm_size: "2gb"
 
   # Local/offline LLM inference (e.g. `ollama pull llama3`), used as the

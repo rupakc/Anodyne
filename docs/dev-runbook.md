@@ -16,16 +16,15 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 make up
 ```
 
-`make up` now brings up the full backbone: Postgres, Redis (host port
-**6380**, not 6379 — see below), MinIO, Keycloak, **Temporal** (+ Temporal
-UI on 8088), **Ray head**, and **Ollama**.
+`make up` now brings up the full backbone: Postgres, Redis (host port 6379),
+MinIO, Keycloak, **Temporal** (+ Temporal UI on 8088), **Ray head** (dashboard
+8265, client 10001), and **Ollama**.
 
-> **Port note:** Ray's internal Redis binds 6379 inside the `ray-head`
-> container, which would otherwise clash with the app's `redis` service on
-> the host. So `redis` is published on host **6380** instead
-> (`ANODYNE_REDIS_URL=redis://localhost:6380/0` in `.env.example`) — the
-> containers still talk to each other over the compose network on 6379
-> internally; only the host-side mapping changed.
+> **Port note:** `ray-head`'s internal Redis (6379) is **not** published to the
+> host — the generation-worker connects to Ray via the client port **10001**,
+> so the app `redis` service keeps host port **6379** with no clash. The
+> `config.py` defaults (`redis://localhost:6379/0`, `ray_address=""` for a local
+> Ray, `temporal_address=localhost:7233`) work out of the box for `make dev`.
 
 Wait for Keycloak to finish importing the `anodyne` realm — tail its logs
 until you see `Imported realm anodyne` (or just poll the realm's OIDC

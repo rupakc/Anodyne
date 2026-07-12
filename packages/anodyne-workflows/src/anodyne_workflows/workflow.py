@@ -15,6 +15,9 @@ class GenerationInput:
     tenant_id: str
     target_rows: int
     seed: int
+    # Tabular synthesizer for source="sample" datasets ("copula"/"ctgan"/"tvae"/"sdv").
+    # Ignored for source != "sample" (those always use `TabularSampler`).
+    method: str = "copula"
 
 
 @workflow.defn

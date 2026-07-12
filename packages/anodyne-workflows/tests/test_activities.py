@@ -22,12 +22,24 @@ import boto3  # type: ignore[import-untyped]
 import pyarrow as pa  # type: ignore[import-untyped]
 import pyarrow.parquet as pq  # type: ignore[import-untyped]
 import pytest
-from anodyne_dataset.models import DatasetSpec, DatasetVersion, GenerationJob, JobStatus
-from anodyne_dataset.ports import DatasetRepository
+from anodyne_dataset.models import (
+    ColumnProfile,
+    DatasetSpec,
+    DatasetVersion,
+    FieldSpec,
+    GenerationJob,
+    JobStatus,
+    Modality,
+    Profile,
+    SemanticType,
+)
+from anodyne_dataset.ports import DatasetRepository, ProfileRepository
+from anodyne_workflows import activities as activities_module
 from anodyne_workflows.activities import (
     ActivityContext,
     assemble_and_upload,
     configure_activities,
+    generate_shards,
     plan_shards,
     register_version,
     set_status,
@@ -60,11 +72,13 @@ class _FakeDatasetRepository(DatasetRepository):
     def __init__(self) -> None:
         self.jobs: dict[uuid.UUID, GenerationJob] = {}
         self.versions: list[DatasetVersion] = []
+        self.specs: dict[uuid.UUID, DatasetSpec] = {}
 
-    async def create_spec(self, spec: DatasetSpec) -> None: ...
+    async def create_spec(self, spec: DatasetSpec) -> None:
+        self.specs[spec.id] = spec
 
     async def get_spec(self, tenant_id: uuid.UUID, dataset_id: uuid.UUID) -> DatasetSpec | None:
-        return None
+        return self.specs.get(dataset_id)
 
     async def list_specs(self, tenant_id: uuid.UUID) -> list[DatasetSpec]:
         return []
@@ -226,3 +240,140 @@ async def test_plan_shards_covers_target_rows_in_contiguous_chunks() -> None:
         expected_start += count
     assert expected_start == inp.target_rows
     assert sum(count for _, count in shards) == inp.target_rows
+
+
+def test_generation_input_still_constructs_without_method_kwarg() -> None:
+    # Regression: every C0 call site constructs `GenerationInput` with only
+    # job_id/dataset_id/tenant_id/target_rows/seed -- `method` must default.
+    inp = GenerationInput(
+        job_id=str(uuid.uuid4()),
+        dataset_id=str(uuid.uuid4()),
+        tenant_id=str(uuid.uuid4()),
+        target_rows=10,
+        seed=1,
+    )
+    assert inp.method == "copula"
+
+
+class _FakeProfileRepository(ProfileRepository):
+    def __init__(self) -> None:
+        self.profiles: dict[uuid.UUID, Profile] = {}
+
+    async def save_profile(self, profile: Profile) -> None:
+        self.profiles[profile.dataset_id] = profile
+
+    async def get_profile(self, tenant_id: uuid.UUID, dataset_id: uuid.UUID) -> Profile | None:
+        p = self.profiles.get(dataset_id)
+        return p if p is not None and p.tenant_id == tenant_id else None
+
+
+class _FakeGenerator:
+    """Deliberately has no side-channel state: `generate_shards` dispatches shard sampling
+    to real Ray remote tasks, which run in a *different process* -- mutations to a shared
+    Python list captured by a `generate()` closure would silently vanish across that
+    boundary. Correctness is instead verified from `generate_shards`' actual return value
+    (the uploaded per-shard artifacts), not from call-count side effects.
+    """
+
+    def generate(self, spec: DatasetSpec, start_row: int, count: int, seed: int) -> pa.Table:
+        return pa.table({"age": [start_row + i for i in range(count)]})
+
+
+async def test_generate_shards_from_sample_fits_once_and_samples_per_shard(
+    s3_client: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job_id, tenant_id, dataset_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    inp = GenerationInput(
+        job_id=str(job_id),
+        dataset_id=str(dataset_id),
+        tenant_id=str(tenant_id),
+        target_rows=20,
+        seed=1,
+        method="copula",
+    )
+    spec = DatasetSpec(
+        id=dataset_id,
+        tenant_id=tenant_id,
+        name="d",
+        description="",
+        modality=Modality.TABULAR,
+        source="sample",
+        fields=[FieldSpec(name="age", semantic_type=SemanticType.INTEGER)],
+        target_rows=20,
+    )
+    repo = _FakeDatasetRepository()
+    repo.specs[dataset_id] = spec
+    profile_repo = _FakeProfileRepository()
+    profile = Profile(
+        id=uuid.uuid4(),
+        tenant_id=tenant_id,
+        dataset_id=dataset_id,
+        row_count=3,
+        columns=[ColumnProfile(name="age", semantic_type=SemanticType.INTEGER, min=0.0, max=9.0)],
+        sample_uri="datasets/x/sample/data.csv",
+        sample_filename="data.csv",
+    )
+    profile_repo.profiles[dataset_id] = profile
+    s3_client.put_object(
+        Bucket=_BUCKET,
+        Key=f"{tenant_id}/datasets/x/sample/data.csv",
+        Body=b"age\n1\n2\n3\n",
+    )
+    configure_activities(
+        ActivityContext(
+            repo=repo, s3_bucket=_BUCKET, s3_client=s3_client, profile_repo=profile_repo
+        )
+    )
+    build_calls: list[str] = []
+
+    def _fake_build(method: str, prof: Profile, df: Any, **kwargs: Any) -> _FakeGenerator:
+        build_calls.append(method)
+        return _FakeGenerator()
+
+    monkeypatch.setattr(activities_module, "build_tabular_generator", _fake_build)
+
+    keys = await generate_shards(inp, [[0, 10], [10, 10]])
+
+    assert build_calls == ["copula"]  # fit once, not once per shard
+    assert len(keys) == 2
+    # Each shard was sampled independently (disjoint start_row) by the *same*
+    # fitted generator -- verified via the actual uploaded artifacts, not a
+    # cross-process side channel (see `_FakeGenerator`'s docstring).
+    row_counts = []
+    for key in keys:
+        obj = s3_client.get_object(Bucket=_BUCKET, Key=f"{tenant_id}/{key}")
+        table = pq.read_table(io.BytesIO(obj["Body"].read()))
+        row_counts.append(table.num_rows)
+        assert table.column("age").to_pylist()[0] in (0, 10)  # matches its shard's start_row
+    assert row_counts == [10, 10]
+
+
+async def test_generate_shards_from_sample_without_profile_raises() -> None:
+    job_id, tenant_id, dataset_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    inp = GenerationInput(
+        job_id=str(job_id),
+        dataset_id=str(dataset_id),
+        tenant_id=str(tenant_id),
+        target_rows=20,
+        seed=1,
+    )
+    spec = DatasetSpec(
+        id=dataset_id,
+        tenant_id=tenant_id,
+        name="d",
+        description="",
+        modality=Modality.TABULAR,
+        source="sample",
+        fields=[FieldSpec(name="age", semantic_type=SemanticType.INTEGER)],
+        target_rows=20,
+    )
+    repo = _FakeDatasetRepository()
+    repo.specs[dataset_id] = spec
+    configure_activities(
+        ActivityContext(
+            repo=repo, s3_bucket=_BUCKET, s3_client=None, profile_repo=_FakeProfileRepository()
+        )
+    )
+
+    with pytest.raises(ValueError, match="no profile"):
+        await generate_shards(inp, [[0, 10]])

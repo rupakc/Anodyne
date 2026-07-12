@@ -10,6 +10,7 @@ from anodyne_dataset.models import DatasetSpec, FieldSpec, GenerationJob, Modali
 from anodyne_dataset.ports import DatasetRepository, SchemaProposer
 from anodyne_generation.proposer import SchemaProposalError
 from anodyne_observability.logging import bind_request_context, configure_logging
+from anodyne_video.ports import VideoProviderRegistry
 from anodyne_workflows.workflow import GenerationInput, GenerationWorkflow
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
@@ -42,6 +43,15 @@ class UpdateDatasetRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     seed: int = 0
+
+
+class RegisterVideoProviderRequest(BaseModel):
+    name: str
+    provider: str
+    model: str
+    api_key: str | None = None
+    api_base: str | None = None
+    params: dict[str, object] = {}
 
 
 def create_app() -> FastAPI:
@@ -107,6 +117,45 @@ def create_app() -> FastAPI:
         config_id: UUID,
         ctx: TenantContext = Depends(deps.require("models:delete")),
         registry: ModelRegistry = Depends(deps.get_model_registry),
+    ) -> None:
+        await registry.delete(ctx.tenant_id, config_id)
+
+    @app.post("/video-providers", status_code=201)
+    async def register_video_provider(
+        body: RegisterVideoProviderRequest,
+        ctx: TenantContext = Depends(deps.require("video_providers:write")),
+        registry: VideoProviderRegistry = Depends(deps.get_video_provider_registry),
+    ) -> dict[str, object]:
+        cfg = await registry.create(
+            ctx.tenant_id,
+            name=body.name,
+            provider=body.provider,
+            model=body.model,
+            api_key=body.api_key,
+            api_base=body.api_base,
+            params=body.params,
+        )
+        data = cfg.model_dump(mode="json")
+        data.pop("secret_ref", None)  # never expose refs
+        return data
+
+    @app.get("/video-providers")
+    async def list_video_providers(
+        ctx: TenantContext = Depends(deps.require("video_providers:read")),
+        registry: VideoProviderRegistry = Depends(deps.get_video_provider_registry),
+    ) -> list[dict[str, object]]:
+        out = []
+        for cfg in await registry.list(ctx.tenant_id):
+            d = cfg.model_dump(mode="json")
+            d.pop("secret_ref", None)
+            out.append(d)
+        return out
+
+    @app.delete("/video-providers/{config_id}", status_code=204)
+    async def delete_video_provider(
+        config_id: UUID,
+        ctx: TenantContext = Depends(deps.require("video_providers:delete")),
+        registry: VideoProviderRegistry = Depends(deps.get_video_provider_registry),
     ) -> None:
         await registry.delete(ctx.tenant_id, config_id)
 
@@ -223,6 +272,7 @@ def create_app() -> FastAPI:
                 tenant_id=str(ctx.tenant_id),
                 target_rows=spec.target_rows,
                 seed=body.seed,
+                modality=str(spec.modality),
             ),
             id=f"gen-{job.id}",
             task_queue="generation",

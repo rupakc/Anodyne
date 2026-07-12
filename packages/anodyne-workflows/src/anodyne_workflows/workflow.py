@@ -15,6 +15,10 @@ class GenerationInput:
     tenant_id: str
     target_rows: int
     seed: int
+    # Which of the tenant's registered models to generate text with. Unused
+    # (and unneeded) for tabular specs; the workflow itself never inspects
+    # this -- it's carried through to `generate_shards`, exactly like `seed`.
+    model_config_id: str | None = None
 
 
 @workflow.defn

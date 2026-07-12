@@ -51,6 +51,11 @@ class _FakeRepo(DatasetRepository, ProfileRepository, PerturbationRepository):
     ) -> list[DatasetVersion]:
         return []
 
+    async def get_version(
+        self, tenant_id: uuid.UUID, version_id: uuid.UUID
+    ) -> DatasetVersion | None:
+        return None
+
     async def save_profile(self, profile: Profile) -> None: ...
     async def get_profile(self, tenant_id: uuid.UUID, dataset_id: uuid.UUID) -> Profile | None:
         return None

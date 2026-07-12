@@ -233,6 +233,70 @@ evaluation_expert_results = Table(
     Column("recommendations", JSONB, nullable=False, server_default="[]"),
 )
 
+# Human-in-the-loop & annotation (sub-system G): human labels/tags/comments on
+# a dataset version (optionally scoped to one row/record), mirroring the
+# `dataset_profiles`/`export_artifacts` shape (its own table, kept separate
+# from `dataset_versions` so adding it never breaks an existing repo/fake).
+#
+# NOTE: the Python identifier is `dataset_annotations`, not `annotations` --
+# `from __future__ import annotations` above actually binds a module-level
+# name `annotations` (a real `__future__._Feature` object, not just a compiler
+# flag), so a `Table` variable literally named `annotations` would shadow it
+# and confuse mypy. The SQL table name itself is still "annotations".
+dataset_annotations = Table(
+    "annotations",
+    metadata,
+    Column("id", PgUUID(as_uuid=True), primary_key=True),
+    Column("tenant_id", PgUUID(as_uuid=True), nullable=False),
+    Column("dataset_id", PgUUID(as_uuid=True), nullable=False),
+    Column("version_id", PgUUID(as_uuid=True), nullable=False),
+    Column("row_index", Integer, nullable=True),
+    Column("record_id", String, nullable=True),
+    Column("label", String, nullable=True),
+    Column("tags", JSONB, nullable=False, server_default="[]"),
+    Column("comment", Text, nullable=True),
+    Column("author", String, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+# Rating/thumbs/comment feedback on a dataset version OR an evaluation run
+# (`target_type`/`target_id`, mirroring the polymorphic-ish shape already used
+# by `ReviewTask`/`review_tasks` below rather than two separate tables).
+feedback = Table(
+    "feedback",
+    metadata,
+    Column("id", PgUUID(as_uuid=True), primary_key=True),
+    Column("tenant_id", PgUUID(as_uuid=True), nullable=False),
+    Column("target_type", String, nullable=False),
+    Column("target_id", PgUUID(as_uuid=True), nullable=False),
+    Column("rating", Integer, nullable=True),
+    Column("thumbs", String, nullable=True),
+    Column("comment", Text, nullable=True),
+    Column("expert_override", JSONB, nullable=True),
+    Column("author", String, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
+# Review queue / HITL tasks: generalizes the existing `GenerationWorkflow.
+# approve_schema` signal + `wait_condition` gate. `workflow_id`/`signal_name`
+# are set when approving/rejecting should resume/abort a paused Temporal
+# workflow (see `api_gateway.hitl_routes.apply_review_decision`).
+review_tasks = Table(
+    "review_tasks",
+    metadata,
+    Column("id", PgUUID(as_uuid=True), primary_key=True),
+    Column("tenant_id", PgUUID(as_uuid=True), nullable=False),
+    Column("kind", String, nullable=False),
+    Column("target_type", String, nullable=False),
+    Column("target_id", PgUUID(as_uuid=True), nullable=False),
+    Column("workflow_id", String, nullable=True),
+    Column("signal_name", String, nullable=True),
+    Column("status", String, nullable=False, server_default="pending"),
+    Column("reviewer_comment", Text, nullable=True),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+    Column("decided_at", DateTime(timezone=True), nullable=True),
+)
+
 # Tenant-scoped tables get an RLS policy keyed on the per-transaction
 # app.tenant_id GUC. `tenants` is keyed by its own `id`; everything else by
 # its `tenant_id` foreign key.
@@ -251,6 +315,9 @@ _TENANT_TABLES: dict[str, str] = {
     "export_artifacts": "tenant_id",
     "evaluation_runs": "tenant_id",
     "evaluation_expert_results": "tenant_id",
+    "annotations": "tenant_id",
+    "feedback": "tenant_id",
+    "review_tasks": "tenant_id",
 }
 
 

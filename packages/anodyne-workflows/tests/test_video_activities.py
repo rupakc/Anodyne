@@ -71,6 +71,11 @@ class _FakeDatasetRepository(DatasetRepository):
     ) -> list[DatasetVersion]:
         return []
 
+    async def get_version(
+        self, tenant_id: uuid.UUID, version_id: uuid.UUID
+    ) -> DatasetVersion | None:
+        return next((v for v in self.versions if v.id == version_id), None)
+
 
 class _FakeVideoProvider(VideoProvider):
     async def generate(

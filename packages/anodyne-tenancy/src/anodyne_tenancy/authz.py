@@ -11,6 +11,8 @@ _VIEWER = {
     "audio_providers:read",
     "perturbations:read",
     "evaluations:read",
+    "annotations:read",
+    "reviews:read",
 }
 _MEMBER = _VIEWER | {
     "llm:invoke",
@@ -21,6 +23,8 @@ _MEMBER = _VIEWER | {
     "audio_providers:write",
     "perturbations:write",
     "evaluations:write",
+    "annotations:write",
+    "reviews:write",
 }
 _ADMIN = _MEMBER | {
     "models:delete",

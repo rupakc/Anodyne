@@ -50,6 +50,13 @@ class _FakeDatasetRepository(DatasetRepository):
     async def list_versions(self, tenant_id: UUID, dataset_id: UUID) -> list[DatasetVersion]:
         return [v for v in self.versions.get(dataset_id, []) if v.tenant_id == tenant_id]
 
+    async def get_version(self, tenant_id: UUID, version_id: UUID) -> DatasetVersion | None:
+        for versions in self.versions.values():
+            for v in versions:
+                if v.id == version_id and v.tenant_id == tenant_id:
+                    return v
+        return None
+
 
 class _FakeExportRepository(ExportRepository):
     def __init__(self) -> None:

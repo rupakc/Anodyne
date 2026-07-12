@@ -19,11 +19,15 @@ from typing import Any
 import boto3  # type: ignore[import-untyped]
 import redis.asyncio as redis
 from anodyne_compute import ray_init
+from anodyne_core.ports import SecretStore
 from anodyne_dataset.ports import DatasetRepository
+from anodyne_image.registry import SqlImageProviderRegistry
 from anodyne_storage.dataset_repo import SqlDatasetRepository
 from anodyne_storage.db import make_engine
+from anodyne_storage.secrets import FernetSecretStore
 from anodyne_workflows.activities import (
     ActivityContext,
+    ImageConfigRegistry,
     ProgressPublisher,
     assemble_and_upload,
     configure_activities,
@@ -66,6 +70,11 @@ class WorkerDeps:
     s3_bucket: str
     s3_client: Any
     publisher: ProgressPublisher | None = None
+    # Image-modality wiring (additive; both default `None`, so callers/tests
+    # that don't pass them -- i.e. every existing tabular one -- are
+    # unaffected). See `anodyne_workflows.activities.ActivityContext`.
+    image_registry: ImageConfigRegistry | None = None
+    secret_store: SecretStore | None = None
 
 
 def registered_workflows() -> list[type]:
@@ -84,6 +93,8 @@ def build_worker(client: Client, deps: WorkerDeps) -> Worker:
             s3_bucket=deps.s3_bucket,
             s3_client=deps.s3_client,
             publisher=deps.publisher,
+            image_registry=deps.image_registry,
+            secret_store=deps.secret_store,
         )
     )
     return Worker(
@@ -103,11 +114,26 @@ async def main() -> None:
     s3_client = boto3.client("s3")
     publisher = RedisProgressPublisher(settings.redis_url)
 
+    # Image-provider registry/secret decryption are only wired when a
+    # `secret_key` is configured -- without one, image-modality jobs fail
+    # clearly at `_resolve_image_provider_config` rather than the worker
+    # crashing at startup; tabular-only deployments need neither.
+    secret_store: SecretStore | None = None
+    image_registry: SqlImageProviderRegistry | None = None
+    if settings.secret_key:
+        secret_store = FernetSecretStore(settings.secret_key.encode())
+        image_registry = SqlImageProviderRegistry(engine, secret_store)
+
     client = await Client.connect(settings.temporal_address)
     worker = build_worker(
         client,
         WorkerDeps(
-            repo=repo, s3_bucket=settings.s3_bucket, s3_client=s3_client, publisher=publisher
+            repo=repo,
+            s3_bucket=settings.s3_bucket,
+            s3_client=s3_client,
+            publisher=publisher,
+            image_registry=image_registry,
+            secret_store=secret_store,
         ),
     )
     await worker.run()

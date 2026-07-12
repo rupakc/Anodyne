@@ -16,7 +16,10 @@ class Settings(BaseSettings):
     # Settings — see .env.example and docs/dev-runbook.md.
     database_url: str = "postgresql+asyncpg://anodyne_app:anodyne_app@localhost:5432/anodyne"
     s3_bucket: str = "anodyne"
-    secret_key: str = ""  # base64 Fernet key; required in prod
+    # base64 Fernet key; required in prod. Also used (if set) to build the
+    # FernetSecretStore that decrypts per-tenant image-provider secrets --
+    # see generation_worker.main.main().
+    secret_key: str = ""
 
 
 def get_settings() -> Settings:

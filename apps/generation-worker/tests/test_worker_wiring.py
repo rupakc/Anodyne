@@ -20,6 +20,7 @@ from typing import Any
 import pytest
 from anodyne_dataset.models import DatasetSpec, DatasetVersion, GenerationJob
 from anodyne_dataset.ports import DatasetRepository
+from anodyne_workflows import activities as workflow_activities
 from anodyne_workflows.workflow import GenerationWorkflow
 from generation_worker import main
 from generation_worker.main import WorkerDeps, build_worker
@@ -91,6 +92,44 @@ def test_build_worker_registers_workflow_and_all_five_activities_on_generation_q
     assert worker.workflows == [GenerationWorkflow]
     activity_names = {a.__temporal_activity_definition.name for a in worker.activities}
     assert activity_names == EXPECTED_ACTIVITY_NAMES
+
+
+class _FakeImageRegistry:
+    async def list(self, tenant_id: uuid.UUID) -> list[object]:
+        return []
+
+
+def test_build_worker_wires_image_registry_and_secret_store_when_supplied(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Additive fields: omitted (previous test) they default to `None`;
+    supplied, `build_worker` must thread them into the shared
+    `ActivityContext` so image-modality jobs can resolve a provider.
+    """
+    monkeypatch.setattr(main, "Worker", _FakeWorker)
+    image_registry = _FakeImageRegistry()
+
+    class _FakeSecretStore:
+        def encrypt(self, plaintext: str) -> str:
+            return plaintext
+
+        def decrypt(self, ref: str) -> str:
+            return ref
+
+    secret_store = _FakeSecretStore()
+    deps = WorkerDeps(
+        repo=_FakeDatasetRepository(),
+        s3_bucket="test-bucket",
+        s3_client=None,
+        image_registry=image_registry,  # type: ignore[arg-type]
+        secret_store=secret_store,  # type: ignore[arg-type]
+    )
+
+    build_worker(_FakeClient(), deps)  # type: ignore[arg-type]
+
+    ctx = workflow_activities._context()
+    assert ctx.image_registry is image_registry  # type: ignore[comparison-overlap]
+    assert ctx.secret_store is secret_store  # type: ignore[comparison-overlap]
 
 
 def test_registered_workflows_and_activities_match_task_queue_constant() -> None:

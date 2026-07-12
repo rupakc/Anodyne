@@ -375,6 +375,8 @@ dependencies = [
     { name = "anodyne-core" },
     { name = "anodyne-dataset" },
     { name = "anodyne-storage" },
+    { name = "pyarrow" },
+    { name = "ray" },
     { name = "temporalio" },
 ]
 
@@ -384,6 +386,8 @@ requires-dist = [
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
     { name = "anodyne-storage", editable = "packages/anodyne-storage" },
+    { name = "pyarrow", specifier = ">=17" },
+    { name = "ray", specifier = ">=2.35" },
     { name = "temporalio", specifier = ">=1.7" },
 ]
 

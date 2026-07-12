@@ -20,3 +20,4 @@ anodyne-storage = { workspace = true }
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["packages", "apps"]
+markers = ["integration: requires external services (Docker/Postgres)"]

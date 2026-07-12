@@ -85,6 +85,28 @@ export interface CreateDatasetInput {
   target_rows: number;
 }
 
+/**
+ * A starter template blueprint (`GET /templates`) mirroring
+ * `packages/anodyne-templates/src/anodyne_templates/models.py`'s `DatasetTemplate`.
+ */
+export interface DatasetTemplate {
+  key: string;
+  name: string;
+  description: string;
+  category: string;
+  modality: Modality;
+  fields: FieldSpec[];
+  default_target_rows: number;
+  default_directives: Record<string, unknown>;
+}
+
+export interface CreateFromTemplateInput {
+  template_key: string;
+  name?: string;
+  target_rows?: number;
+  directives?: Record<string, unknown>;
+}
+
 export interface UpdateDatasetInput {
   name?: string;
   target_rows?: number;
@@ -133,6 +155,10 @@ export interface ApiClient {
   listVersions(id: string): Promise<DatasetVersion[]>;
   /** Resolves to a presigned, time-limited download URL for one version's artifact. */
   downloadUrl(datasetId: string, versionId: string): Promise<string>;
+  /** Lists the starter template catalog (`GET /templates`). */
+  listTemplates(): Promise<DatasetTemplate[]>;
+  /** Builds and persists a `DatasetSpec` from a catalog template (`POST /datasets/from-template`). */
+  createFromTemplate(input: CreateFromTemplateInput): Promise<DatasetSpec>;
 }
 
 /**
@@ -181,5 +207,11 @@ export function createApiClient(accessToken: string | undefined, baseUrl: string
       request<{ url: string }>(`/datasets/${datasetId}/versions/${versionId}/download`).then(
         (r) => r.url,
       ),
+    listTemplates: () => request<DatasetTemplate[]>("/templates"),
+    createFromTemplate: (input) =>
+      request<DatasetSpec>("/datasets/from-template", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
   };
 }

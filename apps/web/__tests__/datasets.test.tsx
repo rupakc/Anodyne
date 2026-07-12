@@ -20,6 +20,8 @@ function makeMockApi(overrides: Partial<ApiClient> = {}): ApiClient {
     getJob: vi.fn(),
     listVersions: vi.fn().mockResolvedValue([]),
     downloadUrl: vi.fn(),
+    listTemplates: vi.fn().mockResolvedValue([]),
+    createFromTemplate: vi.fn(),
     ...overrides,
   };
 }

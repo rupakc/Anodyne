@@ -16,7 +16,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import { Wizard } from "@/app/app/new/wizard";
-import type { ApiClient, DatasetSpec, GenerationJob } from "@/lib/api";
+import type { ApiClient, DatasetSpec, DatasetTemplate, GenerationJob } from "@/lib/api";
 
 const PROPOSED_SPEC: DatasetSpec = {
   id: "dataset-1",
@@ -45,6 +45,26 @@ const GENERATED_JOB: GenerationJob = {
   workflow_id: "gen-job-1",
 };
 
+const CUSTOMERS_TEMPLATE: DatasetTemplate = {
+  key: "customers",
+  name: "Customers",
+  description: "A customer roster.",
+  category: "crm",
+  modality: "tabular",
+  fields: [],
+  default_target_rows: 1000,
+  default_directives: {},
+};
+
+const SPEC_FROM_TEMPLATE: DatasetSpec = {
+  ...PROPOSED_SPEC,
+  id: "dataset-2",
+  source: "template",
+  fields: [
+    { name: "full_name", semantic_type: "name", nullable: false, constraints: {}, distribution: null },
+  ],
+};
+
 function makeMockApi(overrides: Partial<ApiClient> = {}): ApiClient {
   return {
     createDataset: vi.fn().mockResolvedValue(PROPOSED_SPEC),
@@ -58,6 +78,8 @@ function makeMockApi(overrides: Partial<ApiClient> = {}): ApiClient {
     getJob: vi.fn(),
     listVersions: vi.fn(),
     downloadUrl: vi.fn(),
+    listTemplates: vi.fn().mockResolvedValue([CUSTOMERS_TEMPLATE]),
+    createFromTemplate: vi.fn().mockResolvedValue(SPEC_FROM_TEMPLATE),
     ...overrides,
   };
 }
@@ -151,5 +173,23 @@ describe("create-from-description wizard", () => {
     expect(screen.getByRole("heading", { name: /describe the dataset/i })).toBeInTheDocument();
     expect(api.updateDataset).not.toHaveBeenCalled();
     expect(api.generate).not.toHaveBeenCalled();
+  });
+
+  it("supports starting from a template and joins the review step", async () => {
+    const user = userEvent.setup();
+    const api = makeMockApi();
+
+    render(<Wizard api={api} />);
+    expect(screen.getByRole("heading", { name: /describe the dataset/i })).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /start from a template/i }));
+    await user.click(await screen.findByRole("button", { name: /customers/i }));
+
+    await waitFor(() =>
+      expect(api.createFromTemplate).toHaveBeenCalledWith({ template_key: "customers" }),
+    );
+
+    await screen.findByRole("heading", { name: /review the proposed schema/i });
+    expect(screen.getByLabelText("Field 1 name")).toHaveValue("full_name");
   });
 });

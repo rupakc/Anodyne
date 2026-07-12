@@ -3,12 +3,15 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createApiClient, type ApiClient, type DatasetSpec, type FieldSpec } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 import { StepIndicator, type WizardStepMeta } from "./step-indicator";
 import { DescribeStep } from "./describe-step";
+import { TemplateStep } from "./template-step";
 import { ReviewStep } from "./review-step";
 import { ConfirmStep } from "./confirm-step";
 
 type Step = "describe" | "review" | "confirm";
+type Source = "describe" | "template";
 
 const STEPS: WizardStepMeta[] = [
   { key: "describe", label: "Describe" },
@@ -41,6 +44,7 @@ export function Wizard({ accessToken, api: injectedApi }: WizardProps) {
   const api = useMemo(() => injectedApi ?? createApiClient(accessToken), [injectedApi, accessToken]);
 
   const [step, setStep] = useState<Step>("describe");
+  const [source, setSource] = useState<Source>("describe");
   const [spec, setSpec] = useState<DatasetSpec | null>(null);
   const [fields, setFields] = useState<FieldSpec[]>([]);
   const [pending, setPending] = useState(false);
@@ -59,6 +63,12 @@ export function Wizard({ accessToken, api: injectedApi }: WizardProps) {
     } finally {
       setPending(false);
     }
+  }
+
+  function handleTemplateCreated(created: DatasetSpec) {
+    setSpec(created);
+    setFields(created.fields);
+    setStep("review");
   }
 
   async function handleReviewNext() {
@@ -103,7 +113,34 @@ export function Wizard({ accessToken, api: injectedApi }: WizardProps) {
         </p>
       ) : null}
 
-      {step === "describe" ? <DescribeStep pending={pending} onSubmit={handleDescribe} /> : null}
+      {step === "describe" ? (
+        <div className="flex flex-col gap-4">
+          <div className="flex gap-2" role="group" aria-label="Dataset source">
+            <Button
+              type="button"
+              size="sm"
+              variant={source === "describe" ? "default" : "outline"}
+              onClick={() => setSource("describe")}
+            >
+              Describe
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={source === "template" ? "default" : "outline"}
+              onClick={() => setSource("template")}
+            >
+              Start from a template
+            </Button>
+          </div>
+
+          {source === "describe" ? (
+            <DescribeStep pending={pending} onSubmit={handleDescribe} />
+          ) : (
+            <TemplateStep api={api} pending={pending} onCreated={handleTemplateCreated} />
+          )}
+        </div>
+      ) : null}
 
       {step === "review" && spec ? (
         <ReviewStep

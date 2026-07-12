@@ -78,6 +78,10 @@ def _client() -> tuple[AsyncClient, Any, _FakeDatasetRepository, _FakeTemporalCl
     fake_client = _FakeTemporalClient()
     app.dependency_overrides[deps.get_dataset_repo] = lambda: repo
     app.dependency_overrides[deps.get_temporal_client] = lambda: fake_client
+    # The shared generate route resolves the LLM model registry (used only for
+    # text datasets); stub it so an audio generate doesn't build a real
+    # secret-store-backed registry.
+    app.dependency_overrides[deps.get_model_registry] = lambda: None
     client = AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
     return client, app, repo, fake_client
 

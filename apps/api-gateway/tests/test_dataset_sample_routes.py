@@ -114,6 +114,10 @@ def wired() -> tuple[AsyncClient, Any, _FakeDatasetRepository, _FakeProfileRepos
     app.dependency_overrides[deps.get_object_store] = lambda: object_store
     app.dependency_overrides[deps.get_schema_proposer] = lambda: _FailingSchemaProposer()
     app.dependency_overrides[deps.get_sample_profiler] = lambda: PandasSampleProfiler()
+    # The shared generate route resolves the LLM model registry (used only for
+    # text datasets); stub it so a tabular from-sample generate doesn't build a
+    # real secret-store-backed registry.
+    app.dependency_overrides[deps.get_model_registry] = lambda: None
     app.dependency_overrides[deps.get_temporal_client] = lambda: fake_client
     client = AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
     return client, app, repo, profile_repo, fake_client

@@ -15,7 +15,6 @@ the C0 path is byte-for-byte unchanged. Handlers self-register when
 
 from __future__ import annotations
 
-import asyncio
 import json
 import uuid
 from collections.abc import Awaitable, Callable

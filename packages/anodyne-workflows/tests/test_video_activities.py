@@ -149,7 +149,12 @@ def _spec(inp: GenerationInput) -> DatasetSpec:
     )
 
 
-def _configure(repo: _FakeDatasetRepository, registry: VideoProviderRegistry, providers: dict[str, VideoProvider], s3_client: Any) -> None:
+def _configure(
+    repo: _FakeDatasetRepository,
+    registry: VideoProviderRegistry,
+    providers: dict[str, VideoProvider],
+    s3_client: Any,
+) -> None:
     configure_activities(
         ActivityContext(
             repo=repo,
@@ -184,7 +189,9 @@ async def test_generate_shards_uploads_clips_and_manifest_fragment(s3_client: An
     repo = _FakeDatasetRepository()
     repo.specs[uuid.UUID(inp.dataset_id)] = _spec(inp)
     config = _config(tenant_id=uuid.UUID(inp.tenant_id))
-    _configure(repo, _FakeVideoProviderRegistry([config]), {"fake": _FakeVideoProvider()}, s3_client)
+    _configure(
+        repo, _FakeVideoProviderRegistry([config]), {"fake": _FakeVideoProvider()}, s3_client
+    )
 
     keys = await generate_shards(inp, [[0, 2]])
 

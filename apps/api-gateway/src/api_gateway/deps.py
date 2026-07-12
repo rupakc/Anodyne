@@ -8,6 +8,7 @@ from uuid import UUID
 
 import jwt
 import redis.asyncio as redis
+from anodyne_audio.registry import SqlAudioProviderRegistry
 from anodyne_core.models import ModelConfig, TenantContext
 from anodyne_core.ports import AuthorizationPolicy, LLMProvider, ObjectStore, SecretStore
 from anodyne_dataset.ports import (
@@ -16,7 +17,6 @@ from anodyne_dataset.ports import (
     SampleProfiler,
     SchemaProposer,
 )
-from anodyne_audio.registry import SqlAudioProviderRegistry
 from anodyne_generation.proposer import LLMSchemaProposer
 from anodyne_image.registry import SqlImageProviderRegistry
 from anodyne_llm.adapter import LiteLLMProvider

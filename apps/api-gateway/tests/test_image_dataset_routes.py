@@ -114,6 +114,10 @@ def wired() -> tuple[AsyncClient, Any, _FakeDatasetRepository, _FakeImageProvide
     fake_client = _FakeTemporalClient()
     app.dependency_overrides[deps.get_dataset_repo] = lambda: repo
     app.dependency_overrides[deps.get_image_provider_registry] = lambda: image_registry
+    # The shared generate route resolves the LLM model registry (used only for
+    # text datasets); stub it so an image generate doesn't build a real
+    # secret-store-backed registry.
+    app.dependency_overrides[deps.get_model_registry] = lambda: image_registry
     app.dependency_overrides[deps.get_temporal_client] = lambda: fake_client
     client = AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
     return client, app, repo, image_registry, fake_client  # type: ignore[return-value]

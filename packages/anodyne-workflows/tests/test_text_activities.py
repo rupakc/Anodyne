@@ -200,7 +200,7 @@ async def test_generate_shards_dispatches_text_path(monkeypatch: pytest.MonkeyPa
         anodyne_compute.remote_generate_text_shard, "remote", _fake_remote, raising=False
     )
     monkeypatch.setattr(
-        "anodyne_workflows.activities.ray.get",
+        "anodyne_workflows.handlers.ray.get",
         lambda ref: ref._value,
     )
     monkeypatch.setattr("anodyne_workflows.activities._object_store", lambda inp: _FakeStore())

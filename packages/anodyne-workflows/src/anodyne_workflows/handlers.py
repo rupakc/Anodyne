@@ -399,13 +399,19 @@ class VideoHandler:
         keys: list[str] = []
         for i, (start, count) in enumerate(shards):
             results = await generator.generate_items(
-                spec, provider=provider, config=config, start_index=start, count=count, seed=inp.seed
+                spec,
+                provider=provider,
+                config=config,
+                start_index=start,
+                count=count,
+                seed=inp.seed,
             )
             item_dicts: list[dict[str, Any]] = []
             for item, content in results:
                 key = _video_clip_key(inp, item.index)
                 await store.put(key, content)
-                item_dicts.append(item.model_copy(update={"object_key": key}).model_dump(mode="json"))
+                updated = item.model_copy(update={"object_key": key})
+                item_dicts.append(updated.model_dump(mode="json"))
             shard_key = _video_shard_key(inp, i)
             await store.put(shard_key, json.dumps(item_dicts).encode())
             keys.append(shard_key)

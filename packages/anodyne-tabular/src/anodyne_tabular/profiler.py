@@ -59,16 +59,13 @@ class PandasSampleProfiler(SampleProfiler):
 
         columns = [self._column_profile(name, df[name]) for name in df.columns]
         numeric_names = [
-            c.name
-            for c in columns
-            if c.semantic_type in (SemanticType.INTEGER, SemanticType.FLOAT)
+            c.name for c in columns if c.semantic_type in (SemanticType.INTEGER, SemanticType.FLOAT)
         ]
         correlations: dict[str, dict[str, float]] = {}
         if len(numeric_names) > 1:
             corr = df[numeric_names].apply(pd.to_numeric, errors="coerce").corr()
             correlations = {
-                row: {col: float(corr.loc[row, col]) for col in corr.columns}
-                for row in corr.index
+                row: {col: float(corr.loc[row, col]) for col in corr.columns} for row in corr.index
             }
 
         return Profile(

@@ -7,9 +7,7 @@ from anodyne_tabular.constraints import enforce
 
 def test_numeric_values_are_clipped_to_bounds() -> None:
     fields = [
-        FieldSpec(
-            name="age", semantic_type=SemanticType.INTEGER, constraints={"min": 0, "max": 10}
-        )
+        FieldSpec(name="age", semantic_type=SemanticType.INTEGER, constraints={"min": 0, "max": 10})
     ]
     table = pa.table({"age": [-5, 3, 50]})
 

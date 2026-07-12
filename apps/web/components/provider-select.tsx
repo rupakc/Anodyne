@@ -41,6 +41,12 @@ export function ProviderSelect({
         if (cancelled) return;
         setProviders(list);
         setError(null);
+        // Pre-select the first enabled provider so a controlled <select>
+        // never shows an option that isn't actually the committed value.
+        if (!allowAuto && value === "") {
+          const first = list.find((p) => p.enabled);
+          if (first) onChange(first.id);
+        }
       },
       (err) => {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load providers.");
@@ -49,7 +55,7 @@ export function ProviderSelect({
     return () => {
       cancelled = true;
     };
-  }, [api, kind]);
+  }, [api, kind, allowAuto, value, onChange]);
 
   if (error) {
     return (

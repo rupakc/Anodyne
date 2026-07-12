@@ -47,8 +47,12 @@ test.describe("generation happy path", () => {
       // app/login/page.tsx), regardless of the originally requested
       // /app/new — follow that link.
       await page.waitForURL(/\/app$/);
-      await page.getByRole("link", { name: "Create a dataset" }).click();
+      // The dashboard's "New dataset" action opens the modality chooser.
+      await page.getByRole("link", { name: /new dataset/i }).click();
       await page.waitForURL(/\/app\/new$/);
+
+      // --- Step 0: pick the tabular modality on the chooser ----------------
+      await page.getByRole("button", { name: /^Tabular/ }).click();
 
       // --- Step 1: describe the dataset -----------------------------------
       const datasetName = `E2E happy path ${Date.now()}`;
@@ -84,8 +88,14 @@ test.describe("generation happy path", () => {
       await versionsLink.click();
       await page.waitForURL(/\/app\/datasets\/[^/]+$/);
 
-      // --- Download the generated Parquet artifact -------------------------
+      // --- Export the version to CSV (new flow) ----------------------------
       await expect(page.getByRole("heading", { name: /^E2E happy path/ })).toBeVisible();
+      await page.getByRole("button", { name: "Export" }).first().click();
+      await page.getByRole("button", { name: "Export", exact: true }).nth(1).click();
+      // The export result surfaces a presigned Download link.
+      await expect(page.getByRole("link", { name: /download/i })).toBeVisible({ timeout: 30_000 });
+
+      // --- Download the generated Parquet artifact -------------------------
       const downloadButton = page.getByRole("button", { name: "Download" }).first();
 
       // Clicking "Download" calls `window.open(presignedUrl, "_blank", ...)`

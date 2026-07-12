@@ -13,6 +13,7 @@ members = [
     "anodyne-core",
     "anodyne-dataset",
     "anodyne-generation",
+    "anodyne-image",
     "anodyne-llm",
     "anodyne-observability",
     "anodyne-storage",
@@ -187,6 +188,7 @@ dev = [
     { name = "anodyne-core" },
     { name = "anodyne-dataset" },
     { name = "anodyne-generation" },
+    { name = "anodyne-image" },
     { name = "anodyne-llm" },
     { name = "anodyne-observability" },
     { name = "anodyne-storage" },
@@ -211,6 +213,7 @@ dev = [
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
     { name = "anodyne-generation", editable = "packages/anodyne-generation" },
+    { name = "anodyne-image", editable = "packages/anodyne-image" },
     { name = "anodyne-llm", editable = "packages/anodyne-llm" },
     { name = "anodyne-observability", editable = "packages/anodyne-observability" },
     { name = "anodyne-storage", editable = "packages/anodyne-storage" },
@@ -290,6 +293,27 @@ requires-dist = [
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
     { name = "faker", specifier = ">=30" },
     { name = "numpy", specifier = ">=2" },
+    { name = "pyarrow", specifier = ">=17" },
+]
+
+[[package]]
+name = "anodyne-image"
+version = "0.1.0"
+source = { editable = "packages/anodyne-image" }
+dependencies = [
+    { name = "anodyne-core" },
+    { name = "anodyne-dataset" },
+    { name = "anodyne-storage" },
+    { name = "httpx" },
+    { name = "pyarrow" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anodyne-core", editable = "packages/anodyne-core" },
+    { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "anodyne-storage", editable = "packages/anodyne-storage" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "pyarrow", specifier = ">=17" },
 ]
 

@@ -15,6 +15,7 @@ from anodyne_dataset.models import (
     SemanticType,
 )
 from anodyne_dataset.ports import DatasetRepository, SchemaProposer
+from anodyne_generation.proposer import SchemaProposalError
 from anodyne_workflows.workflow import GenerationInput, GenerationWorkflow
 from api_gateway import deps
 from api_gateway.app import create_app
@@ -37,6 +38,16 @@ _PROPOSED_FIELDS = [
 class _FakeSchemaProposer(SchemaProposer):
     async def propose(self, description: str) -> list[FieldSpec]:
         return list(_PROPOSED_FIELDS)
+
+
+class _EmptySchemaProposer(SchemaProposer):
+    async def propose(self, description: str) -> list[FieldSpec]:
+        return []
+
+
+class _FailingSchemaProposer(SchemaProposer):
+    async def propose(self, description: str) -> list[FieldSpec]:
+        raise SchemaProposalError("model returned unparseable output")
 
 
 class _FakeDatasetRepository(DatasetRepository):
@@ -170,6 +181,33 @@ async def test_create_dataset_returns_proposed_schema(wired):  # type: ignore[no
     assert UUID(body["id"]) in repo.specs
 
 
+async def test_create_dataset_maps_schema_proposal_error_to_400(wired):  # type: ignore[no-untyped-def]
+    client, app, _, _ = wired
+    app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.MEMBER, uuid4())
+    app.dependency_overrides[deps.get_schema_proposer] = lambda: _FailingSchemaProposer()
+
+    r = await client.post(
+        "/datasets", json={"name": "d", "description": "garbled", "target_rows": 10}
+    )
+
+    # Malformed LLM output is a client-fixable input problem, not a server
+    # fault -- must not surface as a bare 500.
+    assert r.status_code == 400
+
+
+async def test_create_dataset_rejects_empty_proposed_schema(wired):  # type: ignore[no-untyped-def]
+    client, app, repo, _ = wired
+    app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.MEMBER, uuid4())
+    app.dependency_overrides[deps.get_schema_proposer] = lambda: _EmptySchemaProposer()
+
+    r = await client.post(
+        "/datasets", json={"name": "d", "description": "vague", "target_rows": 10}
+    )
+
+    assert r.status_code == 400
+    assert not repo.specs
+
+
 async def test_viewer_cannot_create_dataset(wired):  # type: ignore[no-untyped-def]
     client, app, _, _ = wired
     app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.VIEWER, uuid4())
@@ -210,6 +248,24 @@ async def test_patch_updates_schema(wired):  # type: ignore[no-untyped-def]
     assert body["target_rows"] == 500
     assert [f["name"] for f in body["fields"]] == ["id"]
     assert repo.specs[UUID(dataset_id)].name == "renamed"
+
+
+async def test_generate_rejects_dataset_edited_down_to_zero_fields(wired):  # type: ignore[no-untyped-def]
+    client, app, _, fake_client = wired
+    tid = uuid4()
+    app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.MEMBER, tid)
+
+    created = await client.post(
+        "/datasets", json={"name": "d", "description": "x", "target_rows": 10}
+    )
+    dataset_id = created.json()["id"]
+    patched = await client.patch(f"/datasets/{dataset_id}", json={"fields": []})
+    assert patched.json()["fields"] == []
+
+    r = await client.post(f"/datasets/{dataset_id}/generate", json={"seed": 0})
+
+    assert r.status_code == 400
+    assert not fake_client.calls  # no workflow started
 
 
 async def test_generate_starts_workflow_and_requires_write(wired):  # type: ignore[no-untyped-def]

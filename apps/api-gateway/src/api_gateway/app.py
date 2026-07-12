@@ -8,6 +8,7 @@ from anodyne_core.models import LLMRequest, TenantContext
 from anodyne_core.ports import LLMProvider, ObjectStore
 from anodyne_dataset.models import DatasetSpec, FieldSpec, GenerationJob, Modality
 from anodyne_dataset.ports import DatasetRepository, SchemaProposer
+from anodyne_generation.proposer import SchemaProposalError
 from anodyne_observability.logging import bind_request_context, configure_logging
 from anodyne_workflows.workflow import GenerationInput, GenerationWorkflow
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -129,7 +130,17 @@ def create_app() -> FastAPI:
         repo: DatasetRepository = Depends(deps.get_dataset_repo),
         proposer: SchemaProposer = Depends(deps.get_schema_proposer),
     ) -> dict[str, object]:
-        fields = await proposer.propose(body.description)
+        try:
+            fields = await proposer.propose(body.description)
+        except SchemaProposalError as exc:
+            # Malformed LLM output is a client-fixable input problem (retry
+            # with a clearer description), not a server fault -- was a bare
+            # 500 before this fix.
+            raise HTTPException(400, f"could not propose a schema: {exc}") from exc
+        if not fields:
+            raise HTTPException(
+                400, "proposed schema has no fields; provide a more specific description"
+            )
         spec = DatasetSpec(
             id=uuid4(),
             tenant_id=ctx.tenant_id,
@@ -191,6 +202,11 @@ def create_app() -> FastAPI:
         spec = await repo.get_spec(ctx.tenant_id, dataset_id)
         if spec is None:
             raise HTTPException(404, "dataset not found")
+        if not spec.fields:
+            # Catches the case a PATCH edited the schema down to zero fields
+            # after creation (creation itself already rejects an empty
+            # proposed schema -- see `create_dataset`).
+            raise HTTPException(400, "dataset has no fields; edit the schema before generating")
         job = GenerationJob(id=uuid4(), tenant_id=ctx.tenant_id, dataset_id=dataset_id)
         # C0 does schema review *before* generate is called (the UI reviews
         # the proposed schema, then calls this route), so there is no

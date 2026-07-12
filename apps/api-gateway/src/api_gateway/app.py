@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from anodyne_core.models import LLMRequest, TenantContext
 from anodyne_core.ports import LLMProvider
-from anodyne_observability.logging import configure_logging
-from fastapi import Depends, FastAPI, HTTPException
+from anodyne_observability.logging import bind_request_context, configure_logging
+from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 from api_gateway import deps
@@ -24,6 +24,17 @@ class RegisterModelRequest(BaseModel):
 def create_app() -> FastAPI:
     configure_logging()
     app = FastAPI(title="Anodyne API Gateway")
+
+    @app.middleware("http")
+    async def request_context_middleware(request: Request, call_next):  # type: ignore[no-untyped-def]
+        # Bind a request_id for correlation before auth runs; tenant_id is
+        # rebound to the real value once get_tenant_context resolves the
+        # token (see deps.get_tenant_context). "anonymous" covers requests
+        # that never reach/pass auth (e.g. /healthz, a 401).
+        request_id = str(uuid4())
+        request.state.request_id = request_id
+        bind_request_context(tenant_id="anonymous", request_id=request_id)
+        return await call_next(request)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:

@@ -10,11 +10,12 @@ from anodyne_core.models import ModelConfig, TenantContext
 from anodyne_core.ports import AuthorizationPolicy, LLMProvider, SecretStore
 from anodyne_llm.adapter import LiteLLMProvider
 from anodyne_llm.registry import SqlModelRegistry
+from anodyne_observability.logging import bind_request_context
 from anodyne_storage.db import make_engine
 from anodyne_storage.secrets import FernetSecretStore
 from anodyne_tenancy.authz import RoleBasedPolicy
 from anodyne_tenancy.oidc import AuthError, TokenValidator
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from api_gateway.config import Settings, get_settings
@@ -57,6 +58,7 @@ def _validator(issuer: str, jwks_url: str, audience: str) -> TokenValidator:
 
 
 def get_tenant_context(
+    request: Request,
     authorization: str = Header(default=""),
     settings: Settings = Depends(get_settings),
 ) -> TenantContext:
@@ -64,9 +66,15 @@ def get_tenant_context(
         raise HTTPException(401, "missing bearer token")
     try:
         v = _validator(settings.oidc_issuer, settings.oidc_jwks_url, settings.oidc_audience)
-        return v.validate(authorization.removeprefix("Bearer "))
+        ctx = v.validate(authorization.removeprefix("Bearer "))
     except AuthError as exc:
         raise HTTPException(401, str(exc)) from exc
+    # Rebind the request-context request_id (set by the app's HTTP
+    # middleware) together with the now-known real tenant_id, so subsequent
+    # log lines in this request correlate to the authenticated tenant.
+    request_id = getattr(request.state, "request_id", "unknown")
+    bind_request_context(tenant_id=str(ctx.tenant_id), request_id=request_id)
+    return ctx
 
 
 def get_policy() -> AuthorizationPolicy:

@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from anodyne_core.models import LLMRequest, TenantContext
 from anodyne_core.ports import LLMProvider, ObjectStore
-from anodyne_dataset.models import DatasetSpec, FieldSpec, GenerationJob, Modality
+from anodyne_dataset.models import DatasetSpec, FieldSpec, GenerationJob, Modality, SemanticType
 from anodyne_dataset.ports import DatasetRepository, SchemaProposer
 from anodyne_generation.proposer import SchemaProposalError
 from anodyne_observability.logging import bind_request_context, configure_logging
@@ -42,6 +42,24 @@ class UpdateDatasetRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     seed: int = 0
+
+
+class AudioDirectives(BaseModel):
+    """Steering for `Modality.AUDIO` generation, stored verbatim as
+    `DatasetSpec.directives["audio"]` (see `anodyne_audio.generator.AudioDatasetGenerator`)."""
+
+    prompts: list[str] | None = None
+    labels: list[str] | None = None
+    voice: str | None = None
+    language: str | None = None
+    model_config_id: UUID | None = None
+
+
+class CreateAudioDatasetRequest(BaseModel):
+    name: str
+    description: str = ""
+    target_rows: int
+    directives: AudioDirectives = AudioDirectives()
 
 
 def create_app() -> FastAPI:
@@ -150,6 +168,30 @@ def create_app() -> FastAPI:
             source="description",
             fields=fields,
             target_rows=body.target_rows,
+        )
+        await repo.create_spec(spec)
+        return spec.model_dump(mode="json")
+
+    @app.post("/datasets/audio", status_code=201)
+    async def create_audio_dataset(
+        body: CreateAudioDatasetRequest,
+        ctx: TenantContext = Depends(deps.require("datasets:write")),
+        repo: DatasetRepository = Depends(deps.get_dataset_repo),
+    ) -> dict[str, object]:
+        # No LLM schema proposal for audio: the "schema" is a single
+        # transcript field; the actual per-item text/label steering lives in
+        # `directives["audio"]` (see AudioDatasetGenerator.plan_items).
+        directives = body.directives.model_dump(mode="json", exclude_none=True)
+        spec = DatasetSpec(
+            id=uuid4(),
+            tenant_id=ctx.tenant_id,
+            name=body.name,
+            description=body.description,
+            modality=Modality.AUDIO,
+            source="description",
+            fields=[FieldSpec(name="transcript", semantic_type=SemanticType.TEXT)],
+            target_rows=body.target_rows,
+            directives={"audio": directives},
         )
         await repo.create_spec(spec)
         return spec.model_dump(mode="json")

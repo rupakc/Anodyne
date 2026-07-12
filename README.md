@@ -6,10 +6,12 @@ sample data; injects controlled noise, drift, outliers, and bias; exports to mul
 evaluates the results with a mixture-of-experts LLM judge pipeline — with human-in-the-loop review
 throughout.
 
-> **Project status — early foundation.** The **Platform Foundation + LLM Abstraction** walking
-> skeleton is implemented (multi-tenant identity, storage/secrets, observability, and an
-> LLM-agnostic layer behind a FastAPI gateway). Generation, perturbation, export, evaluation,
-> the web UI, and full deployment are on the roadmap (see below) and not yet built.
+> **Project status.** The **Platform Foundation + LLM Abstraction** and the **Generation Engine**
+> (all five modalities) are implemented: multi-tenant identity, storage/secrets, observability, an
+> LLM-agnostic layer, and dataset generation for **tabular (from description *and* sample), text,
+> image, audio, and video** — orchestrated by Temporal + Ray, with starter templates and
+> bias/edge-case steering, driven from a Next.js web UI. Perturbation, export, evaluation, and full
+> deployment are on the roadmap (see below).
 
 ## Why Anodyne
 
@@ -37,15 +39,27 @@ Full detail in [`docs/architecture.md`](docs/architecture.md). In brief:
 
 ```
 apps/
-  api-gateway/          FastAPI: OIDC auth, tenant resolution, RBAC, routes
+  api-gateway/          FastAPI: OIDC auth, tenant resolution, RBAC, dataset + provider routes
+  generation-worker/    Temporal worker dispatching Ray generation activities
+  web/                  Next.js UI (Auth.js/Keycloak, autumn-pastel) — create → generate → download
 packages/
-  anodyne-core          domain models + ports (no infra imports)
+  anodyne-core          shared base models + ports
   anodyne-tenancy       OIDC validation, role-based authorization
   anodyne-storage       Fernet secrets, tenant-prefixed S3, Postgres RLS sessions + Alembic
   anodyne-observability structlog JSON logging + OpenTelemetry
   anodyne-llm           LiteLLM adapter + DB-backed per-tenant model registry
-infra/docker/           docker-compose backbone + Keycloak realm seed
-docs/                   architecture, specs, plans, dev runbook
+  anodyne-dataset       dataset/profile/job/version domain models + ports (Generator, ...)
+  anodyne-generation    LLM schema proposer + deterministic tabular sampler
+  anodyne-tabular       from-sample profiling + copula/CTGAN/TVAE (+ SDV opt-in)
+  anodyne-text          LLM text corpora (classification/QA/summarization/chat)
+  anodyne-image         provider-agnostic image generation (SDXL / external APIs)
+  anodyne-audio         provider-agnostic audio/TTS generation
+  anodyne-video         provider-agnostic text-to-video generation
+  anodyne-templates     starter templates + bias/edge-case/use-case directives
+  anodyne-compute       Ray shard-generation tasks + GPU actor seams
+  anodyne-workflows     Temporal GenerationWorkflow + modality-registry activities
+infra/docker/           docker-compose backbone (Postgres, Redis, MinIO, Keycloak, Temporal, Ray, Ollama)
+docs/                   architecture, specs, plans, dev runbook, wiki
 ```
 
 ## Quick start (local dev)
@@ -87,8 +101,12 @@ exercises Postgres row-level security via testcontainers.
 |------|------------|--------|
 | A + B | Platform Foundation + LLM Abstraction | ✅ walking skeleton |
 | C0 | Generation foundation — tabular-from-description, Temporal + Ray, Web UI | ✅ done |
-| C1 | Generation: tabular (full) — from-sample profiling, copula/CTGAN/TVAE, SDV opt-in | ✅ done |
-| C2–C6 | Generation: text, image, audio, video, templates | in progress |
+| C1 | Tabular (full) — from-sample profiling, copula/CTGAN/TVAE, SDV opt-in | ✅ done |
+| C2 | Text — LLM corpora (classification/QA/summarization/chat), dedup/quality | ✅ done |
+| C3 | Image — provider-agnostic (SDXL / external APIs) | ✅ done |
+| C4 | Audio — provider-agnostic TTS (self-hosted / external) | ✅ done |
+| C5 | Video — provider-agnostic text-to-video | ✅ done |
+| C6 | Starter templates + bias/edge-case/use-case directives | ✅ done |
 | D | Perturbation (noise, drift, outliers, bias/edge-case) | planned |
 | E | Export & Storage (CSV/JSON/Parquet/Arrow) | planned |
 | F | Evaluation Engine (LLM-as-a-Judge MoE + reports) | planned |

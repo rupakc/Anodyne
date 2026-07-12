@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from anodyne_core.models import LLMRequest, TenantContext
 from anodyne_core.ports import LLMProvider, ObjectStore
-from anodyne_dataset.models import DatasetSpec, FieldSpec, GenerationJob, Modality
+from anodyne_dataset.models import DatasetSpec, FieldSpec, GenerationJob, Modality, SemanticType
 from anodyne_dataset.ports import DatasetRepository, SchemaProposer
 from anodyne_generation.proposer import SchemaProposalError
 from anodyne_observability.logging import bind_request_context, configure_logging
@@ -26,6 +26,23 @@ class RegisterModelRequest(BaseModel):
     api_key: str | None = None
     api_base: str | None = None
     params: dict[str, object] = {}
+
+
+class RegisterImageProviderRequest(BaseModel):
+    name: str
+    provider: str  # e.g. "openai-images", "sdxl-self-hosted"
+    model: str
+    api_key: str | None = None
+    api_base: str | None = None
+    params: dict[str, object] = {}
+
+
+class CreateImageDatasetRequest(BaseModel):
+    name: str
+    description: str
+    target_count: int
+    labels: list[str] = []
+    directives: dict[str, object] = {}
 
 
 class CreateDatasetRequest(BaseModel):
@@ -110,6 +127,45 @@ def create_app() -> FastAPI:
     ) -> None:
         await registry.delete(ctx.tenant_id, config_id)
 
+    @app.post("/image-providers", status_code=201)
+    async def register_image_provider(
+        body: RegisterImageProviderRequest,
+        ctx: TenantContext = Depends(deps.require("image_providers:write")),
+        registry: ModelRegistry = Depends(deps.get_image_provider_registry),
+    ) -> dict[str, object]:
+        cfg = await registry.create(
+            ctx.tenant_id,
+            name=body.name,
+            provider=body.provider,
+            model=body.model,
+            api_key=body.api_key,
+            api_base=body.api_base,
+            params=body.params,
+        )
+        data = cfg.model_dump(mode="json")
+        data.pop("secret_ref", None)  # never expose refs
+        return data
+
+    @app.get("/image-providers")
+    async def list_image_providers(
+        ctx: TenantContext = Depends(deps.require("image_providers:read")),
+        registry: ModelRegistry = Depends(deps.get_image_provider_registry),
+    ) -> list[dict[str, object]]:
+        out = []
+        for cfg in await registry.list(ctx.tenant_id):
+            d = cfg.model_dump(mode="json")
+            d.pop("secret_ref", None)
+            out.append(d)
+        return out
+
+    @app.delete("/image-providers/{config_id}", status_code=204)
+    async def delete_image_provider(
+        config_id: UUID,
+        ctx: TenantContext = Depends(deps.require("image_providers:delete")),
+        registry: ModelRegistry = Depends(deps.get_image_provider_registry),
+    ) -> None:
+        await registry.delete(ctx.tenant_id, config_id)
+
     @app.post("/llm/invoke")
     async def invoke(
         request: LLMRequest,
@@ -150,6 +206,42 @@ def create_app() -> FastAPI:
             source="description",
             fields=fields,
             target_rows=body.target_rows,
+        )
+        await repo.create_spec(spec)
+        return spec.model_dump(mode="json")
+
+    @app.post("/datasets/image", status_code=201)
+    async def create_image_dataset(
+        body: CreateImageDatasetRequest,
+        ctx: TenantContext = Depends(deps.require("datasets:write")),
+        repo: DatasetRepository = Depends(deps.get_dataset_repo),
+    ) -> dict[str, object]:
+        # Unlike `create_dataset`, this doesn't go through the LLM schema
+        # proposer: an image dataset has no column schema, just an optional
+        # label dimension (synthesized as one CATEGORICAL field so
+        # `ImagePromptBuilder` can rotate through it) and free-form
+        # directives that steer prompt composition.
+        fields = (
+            [
+                FieldSpec(
+                    name="label",
+                    semantic_type=SemanticType.CATEGORICAL,
+                    constraints={"choices": body.labels},
+                )
+            ]
+            if body.labels
+            else []
+        )
+        spec = DatasetSpec(
+            id=uuid4(),
+            tenant_id=ctx.tenant_id,
+            name=body.name,
+            description=body.description,
+            modality=Modality.IMAGE,
+            source="description",
+            fields=fields,
+            target_rows=body.target_count,
+            directives=body.directives,
         )
         await repo.create_spec(spec)
         return spec.model_dump(mode="json")
@@ -202,10 +294,13 @@ def create_app() -> FastAPI:
         spec = await repo.get_spec(ctx.tenant_id, dataset_id)
         if spec is None:
             raise HTTPException(404, "dataset not found")
-        if not spec.fields:
+        if spec.modality is Modality.TABULAR and not spec.fields:
             # Catches the case a PATCH edited the schema down to zero fields
             # after creation (creation itself already rejects an empty
-            # proposed schema -- see `create_dataset`).
+            # proposed schema -- see `create_dataset`). Doesn't apply to
+            # image datasets: a single-class (no label) image dataset
+            # legitimately has zero fields -- the prompt comes from
+            # `description`/`directives`, not a column schema.
             raise HTTPException(400, "dataset has no fields; edit the schema before generating")
         job = GenerationJob(id=uuid4(), tenant_id=ctx.tenant_id, dataset_id=dataset_id)
         # C0 does schema review *before* generate is called (the UI reviews
@@ -223,6 +318,7 @@ def create_app() -> FastAPI:
                 tenant_id=str(ctx.tenant_id),
                 target_rows=spec.target_rows,
                 seed=body.seed,
+                modality=str(spec.modality),
             ),
             id=f"gen-{job.id}",
             task_queue="generation",

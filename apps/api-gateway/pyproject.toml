@@ -4,7 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = ["anodyne-core", "anodyne-tenancy", "anodyne-storage", "anodyne-llm",
                 "anodyne-observability", "anodyne-dataset", "anodyne-generation",
-                "anodyne-workflows", "fastapi>=0.115", "uvicorn[standard]>=0.30",
+                "anodyne-workflows", "anodyne-image", "fastapi>=0.115", "uvicorn[standard]>=0.30",
                 "pydantic-settings>=2.4", "pyjwt[crypto]>=2.9", "temporalio>=1.7", "redis>=5"]
 [build-system]
 requires = ["hatchling"]
@@ -18,3 +18,4 @@ anodyne-observability = { workspace = true }
 anodyne-dataset = { workspace = true }
 anodyne-generation = { workspace = true }
 anodyne-workflows = { workspace = true }
+anodyne-image = { workspace = true }

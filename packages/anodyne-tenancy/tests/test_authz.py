@@ -31,3 +31,19 @@ def test_viewer_can_read_but_not_write_datasets() -> None:
 
 def test_member_can_write_datasets() -> None:
     assert RoleBasedPolicy().is_permitted(_ctx(Role.MEMBER), "datasets:write")
+
+
+def test_viewer_can_read_but_not_write_image_providers() -> None:
+    p = RoleBasedPolicy()
+    assert p.is_permitted(_ctx(Role.VIEWER), "image_providers:read")
+    assert not p.is_permitted(_ctx(Role.VIEWER), "image_providers:write")
+
+
+def test_member_can_write_but_not_delete_image_providers() -> None:
+    p = RoleBasedPolicy()
+    assert p.is_permitted(_ctx(Role.MEMBER), "image_providers:write")
+    assert not p.is_permitted(_ctx(Role.MEMBER), "image_providers:delete")
+
+
+def test_admin_can_delete_image_providers() -> None:
+    assert RoleBasedPolicy().is_permitted(_ctx(Role.ADMIN), "image_providers:delete")

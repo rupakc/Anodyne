@@ -3,7 +3,8 @@ name = "generation-worker"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = ["anodyne-workflows", "anodyne-storage", "anodyne-compute", "anodyne-dataset",
-                "anodyne-core", "temporalio>=1.7", "redis>=5", "pydantic-settings>=2.4"]
+                "anodyne-core", "anodyne-video", "temporalio>=1.7", "redis>=5",
+                "pydantic-settings>=2.4", "httpx>=0.27"]
 
 [build-system]
 requires = ["hatchling"]
@@ -15,3 +16,4 @@ anodyne-storage = { workspace = true }
 anodyne-compute = { workspace = true }
 anodyne-dataset = { workspace = true }
 anodyne-core = { workspace = true }
+anodyne-video = { workspace = true }

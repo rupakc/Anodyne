@@ -20,6 +20,8 @@ from typing import Any
 import pytest
 from anodyne_dataset.models import DatasetSpec, DatasetVersion, GenerationJob
 from anodyne_dataset.ports import DatasetRepository
+from anodyne_video.models import VideoProviderConfig
+from anodyne_video.ports import VideoProviderRegistry
 from anodyne_workflows.workflow import GenerationWorkflow
 from generation_worker import main
 from generation_worker.main import WorkerDeps, build_worker
@@ -30,6 +32,10 @@ EXPECTED_ACTIVITY_NAMES = {
     "assemble_and_upload",
     "register_version",
     "set_status",
+    "plan_video_items",
+    "generate_video_items",
+    "assemble_video_manifest",
+    "register_video_version",
 }
 
 
@@ -55,6 +61,29 @@ class _FakeDatasetRepository(DatasetRepository):
         self, tenant_id: uuid.UUID, dataset_id: uuid.UUID
     ) -> list[DatasetVersion]:
         return []
+
+
+class _FakeVideoProviderRegistry(VideoProviderRegistry):
+    async def create(
+        self,
+        tenant_id: uuid.UUID,
+        *,
+        name: str,
+        provider: str,
+        model: str,
+        api_key: str | None,
+        api_base: str | None,
+        params: dict[str, object],
+    ) -> VideoProviderConfig:
+        raise NotImplementedError
+
+    async def get(self, tenant_id: uuid.UUID, config_id: uuid.UUID) -> VideoProviderConfig | None:
+        return None
+
+    async def list(self, tenant_id: uuid.UUID) -> list[VideoProviderConfig]:
+        return []
+
+    async def delete(self, tenant_id: uuid.UUID, config_id: uuid.UUID) -> None: ...
 
 
 class _FakeWorker:
@@ -98,3 +127,38 @@ def test_registered_workflows_and_activities_match_task_queue_constant() -> None
     assert main.registered_workflows() == [GenerationWorkflow]
     names = {a.__temporal_activity_definition.name for a in main.registered_activities()}  # type: ignore[attr-defined]
     assert names == EXPECTED_ACTIVITY_NAMES
+
+
+def test_build_worker_configures_video_activities_when_deps_provided(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`WorkerDeps`'s video fields are optional (default `None`/empty) so the
+    tabular-only configuration (the test above) keeps working unchanged; this
+    test exercises the case where a real deployment also wires video infra.
+    """
+    monkeypatch.setattr(main, "Worker", _FakeWorker)
+    deps = WorkerDeps(
+        repo=_FakeDatasetRepository(),
+        s3_bucket="test-bucket",
+        s3_client=None,
+        video_registry=_FakeVideoProviderRegistry(),
+        video_providers={},
+    )
+
+    worker = build_worker(_FakeClient(), deps)  # type: ignore[arg-type]
+
+    assert isinstance(worker, _FakeWorker)
+    activity_names = {a.__temporal_activity_definition.name for a in worker.activities}
+    assert activity_names == EXPECTED_ACTIVITY_NAMES
+
+
+def test_build_worker_configures_video_activities_with_no_video_deps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Omitting the video deps entirely (existing tabular-only callers) must not error."""
+    monkeypatch.setattr(main, "Worker", _FakeWorker)
+    deps = WorkerDeps(repo=_FakeDatasetRepository(), s3_bucket="test-bucket", s3_client=None)
+
+    worker = build_worker(_FakeClient(), deps)  # type: ignore[arg-type]
+
+    assert isinstance(worker, _FakeWorker)

@@ -12,12 +12,15 @@ jobs:
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy .
-      - run: uv run pytest -m "not integration"
+      - run: uv run pytest -m "not integration and not e2e"
 
   # Exercises Postgres row-level security for real: testcontainers manages
   # its own Postgres container (ubuntu-latest has Docker preinstalled), and
   # test_rls.py / test_registry.py connect as a non-superuser role, so this
   # job is the only place tenant isolation is actually verified end-to-end.
+  # Also covers the dataset-repo, Ray, and Temporal-workflow integration
+  # tests added in C0 (Docker/testcontainers, Ray, and the Temporal test
+  # server are all available on ubuntu-latest runners).
   integration:
     runs-on: ubuntu-latest
     steps:
@@ -25,3 +28,26 @@ jobs:
       - uses: astral-sh/setup-uv@v3
       - run: uv sync --all-extras
       - run: uv run pytest -m integration
+
+  # Lints, typechecks, unit-tests (vitest), and builds the Next.js app.
+  # The Playwright e2e suite (`pnpm --dir apps/web test:e2e`, `@e2e`
+  # marker) needs the full backbone (gateway, worker, Temporal, Ray,
+  # Ollama) running and is intentionally NOT run here — it stays a
+  # documented manual lane (see apps/web/playwright.config.ts).
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: apps/web/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: apps/web/pnpm-lock.yaml
+      - run: pnpm --dir apps/web install --frozen-lockfile
+      - run: pnpm --dir apps/web lint
+      - run: pnpm --dir apps/web typecheck
+      - run: pnpm --dir apps/web test
+      - run: pnpm --dir apps/web build

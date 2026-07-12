@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "anodyne",
+    "anodyne-audio",
     "anodyne-compute",
     "anodyne-core",
     "anodyne-dataset",
@@ -183,6 +184,7 @@ source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
+    { name = "anodyne-audio" },
     { name = "anodyne-compute" },
     { name = "anodyne-core" },
     { name = "anodyne-dataset" },
@@ -207,6 +209,7 @@ dev = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "anodyne-audio", editable = "packages/anodyne-audio" },
     { name = "anodyne-compute", editable = "packages/anodyne-compute" },
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
@@ -225,6 +228,25 @@ dev = [
     { name = "pytest-asyncio", specifier = ">=0.24" },
     { name = "ruff", specifier = ">=0.6" },
     { name = "testcontainers", extras = ["postgres"], specifier = ">=4" },
+]
+
+[[package]]
+name = "anodyne-audio"
+version = "0.1.0"
+source = { editable = "packages/anodyne-audio" }
+dependencies = [
+    { name = "anodyne-core" },
+    { name = "anodyne-dataset" },
+    { name = "faker" },
+    { name = "httpx" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anodyne-core", editable = "packages/anodyne-core" },
+    { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "faker", specifier = ">=30" },
+    { name = "httpx", specifier = ">=0.27" },
 ]
 
 [[package]]

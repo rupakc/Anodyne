@@ -3,7 +3,7 @@ name = "anodyne-workflows"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = ["anodyne-dataset", "anodyne-storage", "anodyne-compute", "anodyne-core",
-                "temporalio>=1.7", "ray>=2.35", "pyarrow>=17"]
+                "anodyne-video", "temporalio>=1.7", "ray>=2.35", "pyarrow>=17"]
 
 [build-system]
 requires = ["hatchling"]
@@ -14,3 +14,4 @@ anodyne-dataset = { workspace = true }
 anodyne-storage = { workspace = true }
 anodyne-compute = { workspace = true }
 anodyne-core = { workspace = true }
+anodyne-video = { workspace = true }

@@ -3,7 +3,8 @@ name = "anodyne-workflows"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = ["anodyne-dataset", "anodyne-storage", "anodyne-compute", "anodyne-core",
-                "anodyne-tabular", "temporalio>=1.7", "ray>=2.35", "pyarrow>=17"]
+                "anodyne-tabular", "anodyne-audio", "anodyne-image", "anodyne-video",
+                "temporalio>=1.7", "ray>=2.35", "pyarrow>=17"]
 
 [build-system]
 requires = ["hatchling"]
@@ -15,3 +16,6 @@ anodyne-storage = { workspace = true }
 anodyne-compute = { workspace = true }
 anodyne-core = { workspace = true }
 anodyne-tabular = { workspace = true }
+anodyne-audio = { workspace = true }
+anodyne-image = { workspace = true }
+anodyne-video = { workspace = true }

@@ -113,3 +113,19 @@ class Profile(BaseModel):
     sample_uri: str
     sample_filename: str
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class AudioSynthesisRequest(BaseModel):
+    """A single text-to-speech synthesis request, passed to an `AudioProvider`."""
+
+    text: str
+    voice: str | None = None
+    language: str | None = None
+
+
+class AudioSynthesisResult(BaseModel):
+    """The audio produced for one `AudioSynthesisRequest`."""
+
+    audio_bytes: bytes
+    format: str = "wav"
+    duration_seconds: float | None = None

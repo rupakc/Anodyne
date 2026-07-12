@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from anodyne_dataset.models import (
+    AudioSynthesisRequest,
+    AudioSynthesisResult,
     DatasetSpec,
     DatasetVersion,
     FieldSpec,
@@ -76,3 +78,12 @@ class ProfileRepository(ABC):
 
     @abstractmethod
     async def get_profile(self, tenant_id: UUID, dataset_id: UUID) -> Profile | None: ...
+
+
+class AudioProvider(ABC):
+    """Port for text-to-speech / audio synthesis, implemented by both self-hosted
+    OSS (e.g. XTTS/Bark, via Ray/GPU) and external-API (e.g. ElevenLabs) adapters
+    in the `anodyne-audio` package."""
+
+    @abstractmethod
+    async def synthesize(self, request: AudioSynthesisRequest) -> AudioSynthesisResult: ...

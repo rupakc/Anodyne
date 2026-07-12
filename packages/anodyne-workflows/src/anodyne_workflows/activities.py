@@ -19,10 +19,13 @@ import pyarrow as pa  # type: ignore[import-untyped]
 import pyarrow.parquet as pq  # type: ignore[import-untyped]
 import ray
 from anodyne_compute import remote_generate_shard
+from anodyne_compute.sample_tasks import remote_generate_shard_from_generator
 from anodyne_core.ports import ObjectStore
-from anodyne_dataset.models import DatasetVersion, GenerationJob, JobStatus
-from anodyne_dataset.ports import DatasetRepository
+from anodyne_dataset.models import DatasetSpec, DatasetVersion, GenerationJob, JobStatus
+from anodyne_dataset.ports import DatasetRepository, ProfileRepository
 from anodyne_storage.objectstore import S3ObjectStore
+from anodyne_tabular.builder import build_tabular_generator
+from anodyne_tabular.io import read_sample
 from temporalio import activity
 
 from anodyne_workflows.workflow import GenerationInput
@@ -58,6 +61,12 @@ class ActivityContext:
     s3_bucket: str
     s3_client: Any
     publisher: ProgressPublisher | None = None
+    # From-sample tabular synthesis (see `_generate_shards_from_sample`). All optional/
+    # defaulted so every existing `ActivityContext(repo=..., s3_bucket=..., s3_client=...)`
+    # construction keeps working unchanged.
+    profile_repo: ProfileRepository | None = None
+    ctgan_epochs: int = 100
+    enable_sdv: bool = False
 
 
 _ctx: ActivityContext | None = None
@@ -115,9 +124,60 @@ async def generate_shards(inp: GenerationInput, shards: list[list[int]]) -> list
     if spec is None:
         raise ValueError(f"dataset {inp.dataset_id} not found for tenant {inp.tenant_id}")
 
+    if spec.source == "sample":
+        return await _generate_shards_from_sample(ctx, store, spec, inp, shards)
+
     keys: list[str] = []
     for i, (start, count) in enumerate(shards):
         ref = remote_generate_shard.remote(spec, start, count, inp.seed + i)
+        data: bytes = await asyncio.to_thread(ray.get, ref)
+        key = _shard_key(inp, i)
+        await store.put(key, data)
+        keys.append(key)
+    return keys
+
+
+async def _generate_shards_from_sample(
+    ctx: ActivityContext,
+    store: ObjectStore,
+    spec: DatasetSpec,
+    inp: GenerationInput,
+    shards: list[list[int]],
+) -> list[str]:
+    """From-sample path: fit a tabular synthesizer once, then sample each shard on Ray.
+
+    Fitting (not just sampling) happens once per generation job -- refitting a
+    statistical/deep model per shard would be wasteful and would break the
+    seed-determinism contract (see `anodyne_tabular`'s generators).
+    """
+    if ctx.profile_repo is None:
+        raise RuntimeError(
+            "ActivityContext.profile_repo not configured: cannot generate a "
+            "source='sample' dataset"
+        )
+    tenant_id, dataset_id = uuid.UUID(inp.tenant_id), uuid.UUID(inp.dataset_id)
+    profile = await ctx.profile_repo.get_profile(tenant_id, dataset_id)
+    if profile is None:
+        raise ValueError(
+            f"dataset {inp.dataset_id} has source='sample' but no profile; "
+            "upload a sample before generating"
+        )
+    sample_bytes = await store.get(profile.sample_uri)
+    sample_df = await asyncio.to_thread(read_sample, sample_bytes, profile.sample_filename)
+    generator = await asyncio.to_thread(
+        build_tabular_generator,
+        inp.method,
+        profile,
+        sample_df,
+        epochs=ctx.ctgan_epochs,
+        enable_sdv=ctx.enable_sdv,
+    )
+
+    keys: list[str] = []
+    for i, (start, count) in enumerate(shards):
+        ref = remote_generate_shard_from_generator.remote(
+            generator, spec, start, count, inp.seed + i
+        )
         data: bytes = await asyncio.to_thread(ray.get, ref)
         key = _shard_key(inp, i)
         await store.put(key, data)

@@ -10,13 +10,26 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from anodyne_dataset.models import DatasetSpec, DatasetVersion, FieldSpec, GenerationJob
-from anodyne_dataset.ports import DatasetRepository
+from anodyne_dataset.models import (
+    ColumnProfile,
+    DatasetSpec,
+    DatasetVersion,
+    FieldSpec,
+    GenerationJob,
+    Profile,
+)
+from anodyne_dataset.ports import DatasetRepository, ProfileRepository
 from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from anodyne_storage.db import dataset_versions, datasets, generation_jobs, tenant_session
+from anodyne_storage.db import (
+    dataset_profiles,
+    dataset_versions,
+    datasets,
+    generation_jobs,
+    tenant_session,
+)
 
 
 def _spec_from_row(m: Any) -> DatasetSpec:
@@ -60,7 +73,21 @@ def _version_from_row(m: Any) -> DatasetVersion:
     )
 
 
-class SqlDatasetRepository(DatasetRepository):
+def _profile_from_row(m: Any) -> Profile:
+    return Profile(
+        id=m["id"],
+        tenant_id=m["tenant_id"],
+        dataset_id=m["dataset_id"],
+        row_count=m["row_count"],
+        columns=[ColumnProfile.model_validate(c) for c in m["columns"]],
+        correlations=m["correlations"],
+        sample_uri=m["sample_uri"],
+        sample_filename=m["sample_filename"],
+        created_at=m["created_at"],
+    )
+
+
+class SqlDatasetRepository(DatasetRepository, ProfileRepository):
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
 
@@ -195,3 +222,40 @@ class SqlDatasetRepository(DatasetRepository):
                 .all()
             )
             return [_version_from_row(r) for r in rows]
+
+    async def save_profile(self, profile: Profile) -> None:
+        async with tenant_session(self._engine, profile.tenant_id) as s:
+            values = {
+                "dataset_id": profile.dataset_id,
+                "id": profile.id,
+                "tenant_id": profile.tenant_id,
+                "row_count": profile.row_count,
+                "columns": [c.model_dump(mode="json") for c in profile.columns],
+                "correlations": profile.correlations,
+                "sample_uri": profile.sample_uri,
+                "sample_filename": profile.sample_filename,
+                "created_at": profile.created_at,
+            }
+            stmt = pg_insert(dataset_profiles).values(**values)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[dataset_profiles.c.dataset_id],
+                set_={k: v for k, v in values.items() if k != "dataset_id"},
+            )
+            await s.execute(stmt)
+            await s.commit()
+
+    async def get_profile(self, tenant_id: UUID, dataset_id: UUID) -> Profile | None:
+        async with tenant_session(self._engine, tenant_id) as s:
+            row = (
+                (
+                    await s.execute(
+                        select(dataset_profiles).where(
+                            dataset_profiles.c.dataset_id == dataset_id,
+                            dataset_profiles.c.tenant_id == tenant_id,
+                        )
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            return _profile_from_row(row) if row else None

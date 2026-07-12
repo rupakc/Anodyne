@@ -82,3 +82,34 @@ class ShardArtifact(BaseModel):
     shard_index: int
     object_key: str
     row_count: int
+
+
+class ColumnProfile(BaseModel):
+    """Inferred schema + statistics for one column of an uploaded sample."""
+
+    name: str
+    semantic_type: SemanticType
+    nullable: bool = False
+    null_rate: float = 0.0
+    distinct_count: int | None = None
+    # Numeric stats (integer/float columns).
+    min: float | None = None
+    max: float | None = None
+    mean: float | None = None
+    std: float | None = None
+    # Categorical stats: value -> relative frequency (top-K).
+    categories: dict[str, float] | None = None
+
+
+class Profile(BaseModel):
+    """Schema + per-column distributions + correlations inferred from an uploaded sample."""
+
+    id: UUID
+    tenant_id: UUID
+    dataset_id: UUID
+    row_count: int
+    columns: list[ColumnProfile]
+    correlations: dict[str, dict[str, float]] = Field(default_factory=dict)
+    sample_uri: str
+    sample_filename: str
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

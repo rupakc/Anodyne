@@ -7,17 +7,36 @@ from uuid import UUID, uuid4
 from anodyne_core.models import LLMRequest, TenantContext
 from anodyne_core.ports import LLMProvider, ObjectStore
 from anodyne_dataset.models import DatasetSpec, FieldSpec, GenerationJob, Modality
-from anodyne_dataset.ports import DatasetRepository, SchemaProposer
+from anodyne_dataset.ports import (
+    DatasetRepository,
+    ProfileRepository,
+    SampleProfiler,
+    SchemaProposer,
+)
 from anodyne_generation.proposer import SchemaProposalError
 from anodyne_observability.logging import bind_request_context, configure_logging
+from anodyne_tabular.io import UnsupportedSampleFormatError
+from anodyne_tabular.schema import fields_from_profile
 from anodyne_templates.catalog import build_dataset_spec, get_template, list_templates
 from anodyne_workflows.workflow import GenerationInput, GenerationWorkflow
-from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
+from fastapi import (
+    Depends,
+    FastAPI,
+    HTTPException,
+    Request,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from pydantic import BaseModel
 from temporalio.client import Client
 
 from api_gateway import deps
 from api_gateway.deps import ModelRegistry, RedisLike
+
+# Sample uploads are capped well below typical request-body limits so a single
+# tenant can't exhaust gateway memory profiling an enormous file synchronously.
+_MAX_SAMPLE_BYTES = 25 * 1024 * 1024
 
 
 class RegisterModelRequest(BaseModel):
@@ -31,8 +50,11 @@ class RegisterModelRequest(BaseModel):
 
 class CreateDatasetRequest(BaseModel):
     name: str
-    description: str
-    target_rows: int
+    description: str = ""
+    target_rows: int = 0
+    # "description" (default, C0) proposes a schema via the LLM; "sample" creates a
+    # draft with no schema yet -- POST /datasets/{id}/sample populates it.
+    source: str = "description"
 
 
 class UpdateDatasetRequest(BaseModel):
@@ -139,6 +161,22 @@ def create_app() -> FastAPI:
         repo: DatasetRepository = Depends(deps.get_dataset_repo),
         proposer: SchemaProposer = Depends(deps.get_schema_proposer),
     ) -> dict[str, object]:
+        if body.source == "sample":
+            # No description to propose a schema from -- the schema comes from
+            # POST /datasets/{id}/sample once a sample is uploaded and profiled.
+            spec = DatasetSpec(
+                id=uuid4(),
+                tenant_id=ctx.tenant_id,
+                name=body.name,
+                description=body.description,
+                modality=Modality.TABULAR,
+                source="sample",
+                fields=[],
+                target_rows=body.target_rows,
+            )
+            await repo.create_spec(spec)
+            return spec.model_dump(mode="json")
+
         try:
             fields = await proposer.propose(body.description)
         except SchemaProposalError as exc:
@@ -162,6 +200,44 @@ def create_app() -> FastAPI:
         )
         await repo.create_spec(spec)
         return spec.model_dump(mode="json")
+
+    @app.post("/datasets/{dataset_id}/sample")
+    async def upload_sample(
+        dataset_id: UUID,
+        file: UploadFile,
+        ctx: TenantContext = Depends(deps.require("datasets:write")),
+        repo: DatasetRepository = Depends(deps.get_dataset_repo),
+        profile_repo: ProfileRepository = Depends(deps.get_profile_repo),
+        object_store: ObjectStore = Depends(deps.get_object_store),
+        profiler: SampleProfiler = Depends(deps.get_sample_profiler),
+    ) -> dict[str, object]:
+        spec = await repo.get_spec(ctx.tenant_id, dataset_id)
+        if spec is None:
+            raise HTTPException(404, "dataset not found")
+        if spec.source != "sample":
+            raise HTTPException(
+                400,
+                "dataset source is not 'sample'; create the dataset with "
+                'source="sample" to upload a sample',
+            )
+        data = await file.read()
+        if len(data) > _MAX_SAMPLE_BYTES:
+            raise HTTPException(413, "sample file too large")
+        if not data:
+            raise HTTPException(400, "sample file is empty")
+        filename = file.filename or "sample.csv"
+        key = f"datasets/{dataset_id}/sample/{filename}"
+        await object_store.put(key, data)
+        try:
+            profile = profiler.profile(ctx.tenant_id, dataset_id, key, data, filename)
+        except UnsupportedSampleFormatError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        await profile_repo.save_profile(profile)
+        spec.fields = fields_from_profile(profile)
+        if spec.target_rows <= 0:
+            spec.target_rows = profile.row_count
+        await repo.update_spec(spec)
+        return {"dataset": spec.model_dump(mode="json"), "profile": profile.model_dump(mode="json")}
 
     @app.get("/datasets")
     async def list_datasets(
@@ -251,6 +327,9 @@ def create_app() -> FastAPI:
         # `awaiting_review` forever waiting for a signal nothing sends. The
         # workflow's HITL gate itself stays intact for when real pre-generate
         # review lands.
+        # Only meaningful for source="sample" (the from-description path always uses
+        # TabularSampler regardless); defaults to the permissive copula generator.
+        method = str(spec.directives.get("synthesizer", "copula"))
         handle = await client.start_workflow(
             GenerationWorkflow.run,
             GenerationInput(
@@ -259,6 +338,7 @@ def create_app() -> FastAPI:
                 tenant_id=str(ctx.tenant_id),
                 target_rows=spec.target_rows,
                 seed=body.seed,
+                method=method,
             ),
             id=f"gen-{job.id}",
             task_queue="generation",

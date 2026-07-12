@@ -98,6 +98,22 @@ dataset_versions = Table(
     Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
 )
 
+# One profile per dataset: `dataset_id` is the primary key, so re-uploading a sample
+# replaces the previous profile via upsert rather than accumulating rows.
+dataset_profiles = Table(
+    "dataset_profiles",
+    metadata,
+    Column("dataset_id", PgUUID(as_uuid=True), primary_key=True),
+    Column("id", PgUUID(as_uuid=True), nullable=False),
+    Column("tenant_id", PgUUID(as_uuid=True), nullable=False),
+    Column("row_count", Integer, nullable=False),
+    Column("columns", JSONB, nullable=False),
+    Column("correlations", JSONB, nullable=False, server_default="{}"),
+    Column("sample_uri", String, nullable=False),
+    Column("sample_filename", String, nullable=False),
+    Column("created_at", DateTime(timezone=True), nullable=False, server_default=func.now()),
+)
+
 # Tenant-scoped tables get an RLS policy keyed on the per-transaction
 # app.tenant_id GUC. `tenants` is keyed by its own `id`; everything else by
 # its `tenant_id` foreign key.
@@ -108,6 +124,7 @@ _TENANT_TABLES: dict[str, str] = {
     "datasets": "tenant_id",
     "generation_jobs": "tenant_id",
     "dataset_versions": "tenant_id",
+    "dataset_profiles": "tenant_id",
 }
 
 

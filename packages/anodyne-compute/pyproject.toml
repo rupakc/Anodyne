@@ -2,7 +2,7 @@
 name = "anodyne-compute"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["anodyne-dataset", "anodyne-generation", "ray>=2.35", "pyarrow>=17"]
+dependencies = ["anodyne-dataset", "anodyne-generation", "anodyne-tabular", "ray>=2.35", "pyarrow>=17"]
 
 [build-system]
 requires = ["hatchling"]
@@ -11,3 +11,4 @@ build-backend = "hatchling.build"
 [tool.uv.sources]
 anodyne-dataset = { workspace = true }
 anodyne-generation = { workspace = true }
+anodyne-tabular = { workspace = true }

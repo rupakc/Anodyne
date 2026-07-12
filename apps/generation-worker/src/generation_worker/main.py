@@ -12,16 +12,19 @@ process entrypoint: ``python -m generation_worker.main``.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
 import boto3  # type: ignore[import-untyped]
 import redis.asyncio as redis
 from anodyne_compute import ray_init
-from anodyne_dataset.ports import DatasetRepository
+from anodyne_dataset.models import DatasetSpec
+from anodyne_dataset.ports import AudioProvider, DatasetRepository
+from anodyne_llm.registry import SqlModelRegistry
 from anodyne_storage.dataset_repo import SqlDatasetRepository
 from anodyne_storage.db import make_engine
+from anodyne_storage.secrets import FernetSecretStore
 from anodyne_workflows.activities import (
     ActivityContext,
     ProgressPublisher,
@@ -36,6 +39,7 @@ from anodyne_workflows.workflow import GenerationWorkflow
 from temporalio.client import Client
 from temporalio.worker import Worker
 
+from generation_worker.audio import AudioProviderFactory
 from generation_worker.config import get_settings
 
 TASK_QUEUE = "generation"
@@ -66,6 +70,11 @@ class WorkerDeps:
     s3_bucket: str
     s3_client: Any
     publisher: ProgressPublisher | None = None
+    # Resolves a tenant's registered ModelConfig into a concrete AudioProvider
+    # (see `generation_worker.audio.AudioProviderFactory`). `None` disables
+    # the audio path (any `Modality.AUDIO` job then fails clearly in
+    # `_generate_audio_shards` rather than silently no-oping).
+    audio_provider_factory: Callable[[DatasetSpec], Awaitable[AudioProvider]] | None = None
 
 
 def registered_workflows() -> list[type]:
@@ -84,6 +93,7 @@ def build_worker(client: Client, deps: WorkerDeps) -> Worker:
             s3_bucket=deps.s3_bucket,
             s3_client=deps.s3_client,
             publisher=deps.publisher,
+            audio_provider_factory=deps.audio_provider_factory,
         )
     )
     return Worker(
@@ -103,11 +113,25 @@ async def main() -> None:
     s3_client = boto3.client("s3")
     publisher = RedisProgressPublisher(settings.redis_url)
 
+    # The audio path needs a Fernet secret key to decrypt provider API keys
+    # (exactly like the gateway's `get_model_registry`); without one, audio
+    # generation jobs fail clearly at `_generate_audio_shards` rather than
+    # silently no-oping. Tabular generation is unaffected either way.
+    audio_provider_factory = None
+    if settings.secret_key:
+        secret_store = FernetSecretStore(settings.secret_key.encode())
+        model_registry = SqlModelRegistry(engine, secret_store)
+        audio_provider_factory = AudioProviderFactory(model_registry, secret_store).build
+
     client = await Client.connect(settings.temporal_address)
     worker = build_worker(
         client,
         WorkerDeps(
-            repo=repo, s3_bucket=settings.s3_bucket, s3_client=s3_client, publisher=publisher
+            repo=repo,
+            s3_bucket=settings.s3_bucket,
+            s3_client=s3_client,
+            publisher=publisher,
+            audio_provider_factory=audio_provider_factory,
         ),
     )
     await worker.run()

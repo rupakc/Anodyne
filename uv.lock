@@ -1027,9 +1027,11 @@ name = "generation-worker"
 version = "0.1.0"
 source = { editable = "apps/generation-worker" }
 dependencies = [
+    { name = "anodyne-audio" },
     { name = "anodyne-compute" },
     { name = "anodyne-core" },
     { name = "anodyne-dataset" },
+    { name = "anodyne-llm" },
     { name = "anodyne-storage" },
     { name = "anodyne-workflows" },
     { name = "pydantic-settings" },
@@ -1039,9 +1041,11 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "anodyne-audio", editable = "packages/anodyne-audio" },
     { name = "anodyne-compute", editable = "packages/anodyne-compute" },
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "anodyne-llm", editable = "packages/anodyne-llm" },
     { name = "anodyne-storage", editable = "packages/anodyne-storage" },
     { name = "anodyne-workflows", editable = "packages/anodyne-workflows" },
     { name = "pydantic-settings", specifier = ">=2.4" },

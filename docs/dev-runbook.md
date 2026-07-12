@@ -102,13 +102,19 @@ AUTH_SECRET=<openssl rand -base64 32>
 KEYCLOAK_ISSUER=http://localhost:8080/realms/anodyne     # default if unset
 KEYCLOAK_CLIENT_ID=anodyne                                # default if unset
 KEYCLOAK_CLIENT_SECRET=dev-only-anodyne-client-secret     # from infra/docker/keycloak/anodyne-realm.json, dev-only
+NEXT_PUBLIC_API_BASE=http://localhost:8000                # default if unset; the api-gateway base URL
 ```
 
 `AUTH_SECRET` and `KEYCLOAK_CLIENT_SECRET` are required — without them,
 Auth.js will fail to sign session JWTs / authenticate against Keycloak.
 `KEYCLOAK_ISSUER` and `KEYCLOAK_CLIENT_ID` fall back to the defaults shown
 above (the local `anodyne` realm/client), so they only need to be set to
-point at a different Keycloak instance.
+point at a different Keycloak instance. `NEXT_PUBLIC_API_BASE` (read by
+`apps/web/lib/api.ts`) is a public, non-secret build-time value — it only
+ever needs overriding if the gateway isn't reachable at the default
+`http://localhost:8000` (e.g. a different port or a deployed environment);
+the create-from-description wizard (`app/app/new`) uses it to call
+`POST /datasets`, `PATCH /datasets/{id}`, and `POST /datasets/{id}/generate`.
 
 If you only need the gateway (e.g. for the `curl` walkthrough below),
 running the first command by itself is enough.

@@ -4,7 +4,10 @@ import path from "node:path";
 export default defineConfig({
   test: {
     environment: "node",
-    include: ["__tests__/**/*.test.ts"],
+    // Component tests (e.g. __tests__/wizard.test.tsx) opt into the DOM
+    // environment per-file via a `// @vitest-environment jsdom` docblock,
+    // so the default here stays "node" for the existing plain-logic tests.
+    include: ["__tests__/**/*.test.{ts,tsx}"],
     server: {
       // `next-auth`'s main entry does `import ... from "next/server"`
       // (no extension). Next.js's package.json has no `exports` map, so

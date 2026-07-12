@@ -413,26 +413,36 @@ version = "0.1.0"
 source = { editable = "apps/api-gateway" }
 dependencies = [
     { name = "anodyne-core" },
+    { name = "anodyne-dataset" },
+    { name = "anodyne-generation" },
     { name = "anodyne-llm" },
     { name = "anodyne-observability" },
     { name = "anodyne-storage" },
     { name = "anodyne-tenancy" },
+    { name = "anodyne-workflows" },
     { name = "fastapi" },
     { name = "pydantic-settings" },
     { name = "pyjwt", extra = ["crypto"] },
+    { name = "redis" },
+    { name = "temporalio" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "anodyne-core", editable = "packages/anodyne-core" },
+    { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "anodyne-generation", editable = "packages/anodyne-generation" },
     { name = "anodyne-llm", editable = "packages/anodyne-llm" },
     { name = "anodyne-observability", editable = "packages/anodyne-observability" },
     { name = "anodyne-storage", editable = "packages/anodyne-storage" },
     { name = "anodyne-tenancy", editable = "packages/anodyne-tenancy" },
+    { name = "anodyne-workflows", editable = "packages/anodyne-workflows" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "pydantic-settings", specifier = ">=2.4" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9" },
+    { name = "redis", specifier = ">=5" },
+    { name = "temporalio", specifier = ">=1.7" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.30" },
 ]
 

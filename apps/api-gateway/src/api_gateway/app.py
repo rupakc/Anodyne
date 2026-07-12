@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from uuid import UUID, uuid4
 
 from anodyne_core.models import LLMRequest, TenantContext
-from anodyne_core.ports import LLMProvider
+from anodyne_core.ports import LLMProvider, ObjectStore
+from anodyne_dataset.models import DatasetSpec, FieldSpec, GenerationJob, Modality
+from anodyne_dataset.ports import DatasetRepository, SchemaProposer
 from anodyne_observability.logging import bind_request_context, configure_logging
-from fastapi import Depends, FastAPI, HTTPException, Request
+from anodyne_workflows.workflow import GenerationInput, GenerationWorkflow
+from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
+from temporalio.client import Client
 
 from api_gateway import deps
-from api_gateway.deps import ModelRegistry
+from api_gateway.deps import ModelRegistry, RedisLike
 
 
 class RegisterModelRequest(BaseModel):
@@ -19,6 +25,22 @@ class RegisterModelRequest(BaseModel):
     api_key: str | None = None
     api_base: str | None = None
     params: dict[str, object] = {}
+
+
+class CreateDatasetRequest(BaseModel):
+    name: str
+    description: str
+    target_rows: int
+
+
+class UpdateDatasetRequest(BaseModel):
+    name: str | None = None
+    target_rows: int | None = None
+    fields: list[FieldSpec] | None = None
+
+
+class GenerateRequest(BaseModel):
+    seed: int = 0
 
 
 def create_app() -> FastAPI:
@@ -99,5 +121,166 @@ def create_app() -> FastAPI:
             raise HTTPException(404, "model config not found")
         resp = await provider.complete(cfg, request)
         return resp.model_dump(mode="json")
+
+    @app.post("/datasets", status_code=201)
+    async def create_dataset(
+        body: CreateDatasetRequest,
+        ctx: TenantContext = Depends(deps.require("datasets:write")),
+        repo: DatasetRepository = Depends(deps.get_dataset_repo),
+        proposer: SchemaProposer = Depends(deps.get_schema_proposer),
+    ) -> dict[str, object]:
+        fields = await proposer.propose(body.description)
+        spec = DatasetSpec(
+            id=uuid4(),
+            tenant_id=ctx.tenant_id,
+            name=body.name,
+            description=body.description,
+            modality=Modality.TABULAR,
+            source="description",
+            fields=fields,
+            target_rows=body.target_rows,
+        )
+        await repo.create_spec(spec)
+        return spec.model_dump(mode="json")
+
+    @app.get("/datasets")
+    async def list_datasets(
+        ctx: TenantContext = Depends(deps.require("datasets:read")),
+        repo: DatasetRepository = Depends(deps.get_dataset_repo),
+    ) -> list[dict[str, object]]:
+        return [s.model_dump(mode="json") for s in await repo.list_specs(ctx.tenant_id)]
+
+    @app.get("/datasets/{dataset_id}")
+    async def get_dataset(
+        dataset_id: UUID,
+        ctx: TenantContext = Depends(deps.require("datasets:read")),
+        repo: DatasetRepository = Depends(deps.get_dataset_repo),
+    ) -> dict[str, object]:
+        spec = await repo.get_spec(ctx.tenant_id, dataset_id)
+        if spec is None:
+            raise HTTPException(404, "dataset not found")
+        return spec.model_dump(mode="json")
+
+    @app.patch("/datasets/{dataset_id}")
+    async def update_dataset(
+        dataset_id: UUID,
+        body: UpdateDatasetRequest,
+        ctx: TenantContext = Depends(deps.require("datasets:write")),
+        repo: DatasetRepository = Depends(deps.get_dataset_repo),
+    ) -> dict[str, object]:
+        spec = await repo.get_spec(ctx.tenant_id, dataset_id)
+        if spec is None:
+            raise HTTPException(404, "dataset not found")
+        if body.name is not None:
+            spec.name = body.name
+        if body.target_rows is not None:
+            spec.target_rows = body.target_rows
+        if body.fields is not None:
+            spec.fields = body.fields
+        await repo.update_spec(spec)
+        return spec.model_dump(mode="json")
+
+    @app.post("/datasets/{dataset_id}/generate", status_code=202)
+    async def start_generation(
+        dataset_id: UUID,
+        body: GenerateRequest,
+        ctx: TenantContext = Depends(deps.require("datasets:write")),
+        repo: DatasetRepository = Depends(deps.get_dataset_repo),
+        client: Client = Depends(deps.get_temporal_client),
+    ) -> dict[str, object]:
+        spec = await repo.get_spec(ctx.tenant_id, dataset_id)
+        if spec is None:
+            raise HTTPException(404, "dataset not found")
+        job = GenerationJob(id=uuid4(), tenant_id=ctx.tenant_id, dataset_id=dataset_id)
+        handle = await client.start_workflow(
+            GenerationWorkflow.run,
+            GenerationInput(
+                job_id=str(job.id),
+                dataset_id=str(dataset_id),
+                tenant_id=str(ctx.tenant_id),
+                target_rows=spec.target_rows,
+                seed=body.seed,
+            ),
+            id=f"gen-{job.id}",
+            task_queue="generation",
+        )
+        job.workflow_id = handle.id
+        await repo.save_job(job)
+        return job.model_dump(mode="json")
+
+    @app.get("/jobs/{job_id}")
+    async def get_job_status(
+        job_id: UUID,
+        ctx: TenantContext = Depends(deps.require("datasets:read")),
+        repo: DatasetRepository = Depends(deps.get_dataset_repo),
+    ) -> dict[str, object]:
+        job = await repo.get_job(ctx.tenant_id, job_id)
+        if job is None:
+            raise HTTPException(404, "job not found")
+        return job.model_dump(mode="json")
+
+    @app.websocket("/jobs/{job_id}/stream")
+    async def job_progress_stream(
+        websocket: WebSocket,
+        job_id: UUID,
+        ctx: TenantContext = Depends(deps.require("datasets:read")),
+        redis_client: RedisLike = Depends(deps.get_redis),
+    ) -> None:
+        await websocket.accept()
+        channel = f"job:{job_id}"
+        pubsub = redis_client.pubsub()
+        await pubsub.subscribe(channel)
+
+        # Forwarding messages never blocks on receiving from the client, so we
+        # need a concurrent watcher to notice the client going away (otherwise
+        # the loop below would spin forever after a disconnect).
+        async def _watch_disconnect() -> None:
+            with contextlib.suppress(WebSocketDisconnect):
+                while True:
+                    await websocket.receive()
+
+        watcher = asyncio.ensure_future(_watch_disconnect())
+        try:
+            while not watcher.done():
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                if message is None:
+                    await asyncio.sleep(0.01)
+                    continue
+                data = message["data"]
+                if isinstance(data, bytes):
+                    data = data.decode()
+                await websocket.send_text(data)
+        except WebSocketDisconnect:
+            pass
+        finally:
+            watcher.cancel()
+            with contextlib.suppress(Exception):
+                await watcher
+            await pubsub.unsubscribe(channel)
+            await pubsub.close()
+
+    @app.get("/datasets/{dataset_id}/versions")
+    async def list_versions(
+        dataset_id: UUID,
+        ctx: TenantContext = Depends(deps.require("datasets:read")),
+        repo: DatasetRepository = Depends(deps.get_dataset_repo),
+    ) -> list[dict[str, object]]:
+        versions = await repo.list_versions(ctx.tenant_id, dataset_id)
+        return [v.model_dump(mode="json") for v in versions]
+
+    @app.get("/datasets/{dataset_id}/versions/{version_id}/download")
+    async def download_version(
+        dataset_id: UUID,
+        version_id: UUID,
+        ctx: TenantContext = Depends(deps.require("datasets:read")),
+        repo: DatasetRepository = Depends(deps.get_dataset_repo),
+        object_store: ObjectStore = Depends(deps.get_object_store),
+    ) -> dict[str, str]:
+        versions = await repo.list_versions(ctx.tenant_id, dataset_id)
+        version = next((v for v in versions if v.id == version_id), None)
+        if version is None:
+            raise HTTPException(404, "version not found")
+        url = await object_store.presigned_url(version.artifact_uri)
+        return {"url": url}
 
     return app

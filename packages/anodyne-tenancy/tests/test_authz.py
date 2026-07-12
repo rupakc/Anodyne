@@ -21,3 +21,13 @@ def test_viewer_cannot_write_models() -> None:
 
 def test_member_can_invoke_llm() -> None:
     assert RoleBasedPolicy().is_permitted(_ctx(Role.MEMBER), "llm:invoke")
+
+
+def test_viewer_can_read_but_not_write_datasets() -> None:
+    p = RoleBasedPolicy()
+    assert p.is_permitted(_ctx(Role.VIEWER), "datasets:read")
+    assert not p.is_permitted(_ctx(Role.VIEWER), "datasets:write")
+
+
+def test_member_can_write_datasets() -> None:
+    assert RoleBasedPolicy().is_permitted(_ctx(Role.MEMBER), "datasets:write")

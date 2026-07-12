@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     oidc_audience: str = "anodyne"
     secret_key: str = ""  # base64 Fernet key; required in prod
     s3_bucket: str = "anodyne"
+    temporal_address: str = "localhost:7233"
+    redis_url: str = "redis://localhost:6379/0"
 
 
 def get_settings() -> Settings:

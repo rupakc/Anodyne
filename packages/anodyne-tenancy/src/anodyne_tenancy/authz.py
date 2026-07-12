@@ -3,8 +3,8 @@ from __future__ import annotations
 from anodyne_core.models import Role, TenantContext
 from anodyne_core.ports import AuthorizationPolicy
 
-_VIEWER = {"models:read"}
-_MEMBER = _VIEWER | {"llm:invoke", "models:write"}
+_VIEWER = {"models:read", "datasets:read"}
+_MEMBER = _VIEWER | {"llm:invoke", "models:write", "datasets:write"}
 _ADMIN = _MEMBER | {"models:delete", "users:read"}
 _OWNER = _ADMIN | {"users:write", "tenant:admin"}
 

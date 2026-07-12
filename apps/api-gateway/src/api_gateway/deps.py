@@ -1,22 +1,30 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from functools import lru_cache
-from typing import Protocol
+from typing import Any, Protocol, cast
 from uuid import UUID
 
 import jwt
+import redis.asyncio as redis
 from anodyne_core.models import ModelConfig, TenantContext
-from anodyne_core.ports import AuthorizationPolicy, LLMProvider, SecretStore
+from anodyne_core.ports import AuthorizationPolicy, LLMProvider, ObjectStore, SecretStore
+from anodyne_dataset.ports import DatasetRepository, SchemaProposer
+from anodyne_generation.proposer import LLMSchemaProposer
 from anodyne_llm.adapter import LiteLLMProvider
 from anodyne_llm.registry import SqlModelRegistry
 from anodyne_observability.logging import bind_request_context
+from anodyne_storage.dataset_repo import SqlDatasetRepository
 from anodyne_storage.db import make_engine
+from anodyne_storage.objectstore import S3ObjectStore
 from anodyne_storage.secrets import FernetSecretStore
 from anodyne_tenancy.authz import RoleBasedPolicy
 from anodyne_tenancy.oidc import AuthError, TokenValidator
-from fastapi import Depends, Header, HTTPException, Request
+from fastapi import Depends, Header, HTTPException
 from sqlalchemy.ext.asyncio import AsyncEngine
+from starlette.requests import HTTPConnection
+from temporalio.client import Client
 
 from api_gateway.config import Settings, get_settings
 
@@ -58,10 +66,14 @@ def _validator(issuer: str, jwks_url: str, audience: str) -> TokenValidator:
 
 
 def get_tenant_context(
-    request: Request,
+    request: HTTPConnection,
     authorization: str = Header(default=""),
     settings: Settings = Depends(get_settings),
 ) -> TenantContext:
+    # `HTTPConnection` (not `Request`) so this same dependency — and anything
+    # built on it, e.g. `require(...)` — works for both HTTP routes and the
+    # `WS /jobs/{id}/stream` route: FastAPI cannot inject a `Request` into a
+    # websocket handler, but `Request`/`WebSocket` both subclass `HTTPConnection`.
     if not authorization.startswith("Bearer "):
         raise HTTPException(401, "missing bearer token")
     try:
@@ -124,3 +136,110 @@ def get_model_registry(settings: Settings = Depends(get_settings)) -> ModelRegis
     Overridden in tests via `app.dependency_overrides[get_model_registry]`.
     """
     return SqlModelRegistry(_engine(settings.database_url), _secret_store(settings.secret_key))
+
+
+def get_dataset_repo(settings: Settings = Depends(get_settings)) -> DatasetRepository:
+    """Real, DB-backed `DatasetRepository` (specs, generation jobs, versions).
+
+    Overridden in tests via `app.dependency_overrides[get_dataset_repo]`.
+    """
+    return SqlDatasetRepository(_engine(settings.database_url))
+
+
+async def get_schema_proposer(
+    ctx: TenantContext = Depends(get_tenant_context),
+    provider: LLMProvider = Depends(get_llm_provider),
+    registry: ModelRegistry = Depends(get_model_registry),
+) -> SchemaProposer:
+    """Real, LLM-backed `SchemaProposer`.
+
+    Uses the tenant's first configured `ModelConfig` to drive the proposal.
+    (A dedicated "default model for schema proposal" flag is a reasonable
+    follow-up if tenants need to pick a specific model for this.)
+    Overridden in tests via `app.dependency_overrides[get_schema_proposer]`.
+    """
+    configs = await registry.list(ctx.tenant_id)
+    if not configs:
+        raise HTTPException(400, "no model configured for this tenant; register one first")
+    return LLMSchemaProposer(provider, configs[0])
+
+
+_temporal_client: Client | None = None
+_temporal_client_lock = asyncio.Lock()
+
+
+async def get_temporal_client(settings: Settings = Depends(get_settings)) -> Client:
+    """Real Temporal `Client`, connected once and cached for the process lifetime.
+
+    Overridden in tests via `app.dependency_overrides[get_temporal_client]`
+    (no live Temporal server needed for non-integration tests).
+    """
+    global _temporal_client
+    if _temporal_client is None:
+        async with _temporal_client_lock:
+            if _temporal_client is None:
+                _temporal_client = await Client.connect(settings.temporal_address)
+    return _temporal_client
+
+
+class PubSubLike(Protocol):
+    """Structural type for the pub/sub handle used by `WS /jobs/{id}/stream`."""
+
+    async def subscribe(self, *channels: str) -> None: ...
+
+    # Mirrors redis-py's `PubSub.get_message` signature (its `timeout` isn't
+    # an `asyncio.timeout`, hence the noqa).
+    async def get_message(
+        self,
+        *,
+        ignore_subscribe_messages: bool = ...,
+        timeout: float | None = ...,  # noqa: ASYNC109
+    ) -> dict[str, Any] | None: ...
+
+    async def unsubscribe(self, *channels: str) -> None: ...
+
+    async def close(self) -> None: ...
+
+
+class RedisLike(Protocol):
+    """Structural type for the Redis client consumed by the gateway.
+
+    `redis.asyncio.Redis` is the real implementation; tests substitute
+    in-memory fakes via `app.dependency_overrides[get_redis]`.
+    """
+
+    def pubsub(self) -> PubSubLike: ...
+
+
+@lru_cache
+def _redis(redis_url: str) -> RedisLike:
+    # `Redis.pubsub()` takes `**kwargs` and returns the concrete `PubSub`
+    # class; both are structurally compatible with `RedisLike`/`PubSubLike`
+    # at the call sites we use, so the cast is safe.
+    return cast(RedisLike, redis.from_url(redis_url))
+
+
+def get_redis(settings: Settings = Depends(get_settings)) -> RedisLike:
+    """Real Redis client, used to subscribe to `job:{id}` progress channels.
+
+    Overridden in tests via `app.dependency_overrides[get_redis]`.
+    """
+    return _redis(settings.redis_url)
+
+
+@lru_cache
+def _s3_client() -> Any:
+    import boto3  # type: ignore[import-untyped]
+
+    return boto3.client("s3")
+
+
+def get_object_store(
+    ctx: TenantContext = Depends(get_tenant_context),
+    settings: Settings = Depends(get_settings),
+) -> ObjectStore:
+    """Real, tenant-scoped `ObjectStore` backed by S3/MinIO.
+
+    Overridden in tests via `app.dependency_overrides[get_object_store]`.
+    """
+    return S3ObjectStore(settings.s3_bucket, ctx.tenant_id, client=_s3_client())

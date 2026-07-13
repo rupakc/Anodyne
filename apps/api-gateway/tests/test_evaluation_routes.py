@@ -62,6 +62,14 @@ class _FakeStore:
         return f"https://signed/{key}"
 
 
+class _FakeEmptyModelRegistry:
+    """No models registered for the tenant -- exercises the "no crash, no
+    default resolved" branch of `start_evaluation`'s default-model lookup."""
+
+    async def list(self, tenant_id):  # type: ignore[no-untyped-def]
+        return []
+
+
 @pytest.fixture
 def client_and_app():  # type: ignore[no-untyped-def]
     app = create_app()
@@ -86,6 +94,7 @@ async def test_start_evaluation_starts_workflow(client_and_app) -> None:  # type
     app.dependency_overrides[deps.get_dataset_repo] = lambda: _FakeDatasetRepo([version])
     app.dependency_overrides[deps.get_evaluation_repo] = lambda: eval_repo
     app.dependency_overrides[deps.get_temporal_client] = lambda: fake_client
+    app.dependency_overrides[deps.get_model_registry] = lambda: _FakeEmptyModelRegistry()
 
     r = await client.post(
         f"/datasets/{dataset_id}/versions/{version_id}/evaluate",
@@ -106,6 +115,7 @@ async def test_start_evaluation_rejects_unknown_version(client_and_app) -> None:
     app.dependency_overrides[deps.get_dataset_repo] = lambda: _FakeDatasetRepo([])
     app.dependency_overrides[deps.get_evaluation_repo] = lambda: _FakeEvalRepo()
     app.dependency_overrides[deps.get_temporal_client] = lambda: _FakeClient()
+    app.dependency_overrides[deps.get_model_registry] = lambda: _FakeEmptyModelRegistry()
     r = await client.post(f"/datasets/{uuid4()}/versions/{uuid4()}/evaluate", json={})
     assert r.status_code == 404
 
@@ -144,9 +154,23 @@ async def test_get_report_and_download(client_and_app) -> None:  # type: ignore[
     assert report.status_code == 200
     assert report.json()["summary"] == "ok"
 
-    dl = await client.get(f"/evaluations/{run.id}/report/download")
-    assert dl.status_code == 200
-    assert dl.json()["url"].startswith("https://signed/")
+    # No presigned URL: the report bytes are streamed straight back through
+    # the gateway with a Content-Disposition attachment header.
+    dl_html = await client.get(f"/evaluations/{run.id}/report/download")
+    assert dl_html.status_code == 200
+    assert dl_html.headers["content-type"].startswith("text/html")
+    assert (
+        dl_html.headers["content-disposition"] == f'attachment; filename="evaluation-{run.id}.html"'
+    )
+    assert dl_html.content == payload
+
+    dl_json = await client.get(f"/evaluations/{run.id}/report/download?format=json")
+    assert dl_json.status_code == 200
+    assert dl_json.headers["content-type"] == "application/json"
+    assert (
+        dl_json.headers["content-disposition"] == f'attachment; filename="evaluation-{run.id}.json"'
+    )
+    assert dl_json.content == payload
 
 
 async def test_get_report_404_for_other_tenant(client_and_app) -> None:  # type: ignore[no-untyped-def]

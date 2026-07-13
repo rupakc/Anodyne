@@ -168,9 +168,7 @@ async def register_perturbed_version(inp: PerturbationInput, uri: str, rows: int
 
 
 @activity.defn(name="set_perturbation_status")
-async def set_perturbation_status(
-    inp: PerturbationInput, status: str, progress: float
-) -> None:
+async def set_perturbation_status(inp: PerturbationInput, status: str, progress: float) -> None:
     """Update the `PerturbationJob` status and publish live progress to Redis.
 
     Like generation's `set_status`, this fetches the existing job and mutates it

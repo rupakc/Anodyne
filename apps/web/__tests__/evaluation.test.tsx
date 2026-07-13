@@ -89,46 +89,30 @@ describe("EvaluationView", () => {
     expect(api.getEvaluationReport).toHaveBeenCalledWith("eval-1");
   });
 
-  it("downloads the report (HTML and JSON) by resolving a fresh presigned URL and opening it", async () => {
+  it("downloads the report (HTML and JSON) by streaming it through the gateway", async () => {
+    // No presigned URL involved: `downloadReport` streams the report through
+    // an authenticated fetch and triggers the browser download itself.
     const user = userEvent.setup();
-    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
-    const reportDownloadUrl = vi
+    const downloadReport = vi
       .fn()
       .mockImplementation((_id: string, format: "html" | "json") =>
-        Promise.resolve(`https://minio.local/report-1.${format}?sig=abc`),
+        Promise.resolve(`evaluation-eval-1.${format}`),
       );
     const api = baseMockApi({
       getEvaluation: vi.fn().mockResolvedValue(SUCCEEDED),
       getEvaluationReport: vi.fn().mockResolvedValue(REPORT),
-      reportDownloadUrl,
+      downloadReport,
     });
 
     render(<EvaluationView evaluationId="eval-1" api={api} pollIntervalMs={10_000} />);
 
     const htmlButton = await screen.findByRole("button", { name: /download report \(html\)/i });
     await user.click(htmlButton);
-
-    await waitFor(() => expect(reportDownloadUrl).toHaveBeenCalledWith("eval-1", "html"));
-    await waitFor(() =>
-      expect(openSpy).toHaveBeenCalledWith(
-        "https://minio.local/report-1.html?sig=abc",
-        "_blank",
-        "noopener,noreferrer",
-      ),
-    );
+    await waitFor(() => expect(downloadReport).toHaveBeenCalledWith("eval-1", "html"));
 
     const jsonButton = await screen.findByRole("button", { name: /download report \(json\)/i });
     await user.click(jsonButton);
-
-    await waitFor(() => expect(reportDownloadUrl).toHaveBeenCalledWith("eval-1", "json"));
-    await waitFor(() =>
-      expect(openSpy).toHaveBeenCalledWith(
-        "https://minio.local/report-1.json?sig=abc",
-        "_blank",
-        "noopener,noreferrer",
-      ),
-    );
-    openSpy.mockRestore();
+    await waitFor(() => expect(downloadReport).toHaveBeenCalledWith("eval-1", "json"));
   });
 
   it("retries a not-yet-ready report fetch and renders it once it lands", async () => {

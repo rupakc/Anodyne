@@ -12,6 +12,7 @@ from anodyne_dataset.models import (
     FieldSpec,
     GenerationJob,
     JobStatus,
+    Modality,
     SemanticType,
 )
 from anodyne_dataset.ports import DatasetRepository, SchemaProposer
@@ -475,22 +476,42 @@ async def test_list_versions(wired):  # type: ignore[no-untyped-def]
     assert versions[0]["artifact_uri"] == "key/artifact.parquet"
 
 
-async def test_download_version_returns_presigned_url(wired):  # type: ignore[no-untyped-def]
+async def test_download_version_streams_artifact_bytes(wired):  # type: ignore[no-untyped-def]
+    # No presigned URL: the gateway streams the artifact bytes itself (with a
+    # Content-Disposition attachment header) so an open page/sleeping laptop/
+    # clock jump can never turn into a "Signature has expired" failure.
     client, app, repo, _ = wired
     tid = uuid4()
     app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.MEMBER, tid)
     dataset_id = uuid4()
     version_id = uuid4()
+    await repo.create_spec(
+        DatasetSpec(
+            id=dataset_id,
+            tenant_id=tid,
+            name="my customers!",
+            description="",
+            modality=Modality.TABULAR,
+            source="description",
+            fields=[],
+            target_rows=10,
+        )
+    )
     await repo.add_version(
         DatasetVersion(
-            id=version_id, tenant_id=tid, dataset_id=dataset_id, artifact_uri="k/artifact.parquet"
+            id=version_id,
+            tenant_id=tid,
+            dataset_id=dataset_id,
+            artifact_uri="k/artifact.parquet",
+            format="parquet",
         )
     )
 
     r = await client.get(f"/datasets/{dataset_id}/versions/{version_id}/download")
 
     assert r.status_code == 200
-    assert r.json()["url"] == "https://example.test/k/artifact.parquet"
+    assert r.headers["content-type"] == "application/octet-stream"
+    assert r.headers["content-disposition"] == 'attachment; filename="my_customers.parquet"'
 
 
 def test_ws_stream_requires_auth() -> None:

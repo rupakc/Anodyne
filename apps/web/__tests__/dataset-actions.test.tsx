@@ -16,23 +16,9 @@ import { PerturbPanel } from "@/app/app/datasets/[id]/perturb-panel";
 import { AnnotationsPanel } from "@/app/app/datasets/[id]/annotations-panel";
 import { FeedbackWidget } from "@/components/feedback-widget";
 import { baseMockApi } from "./mock-api";
-import { ApiError, type ExportResult, type PerturbationJob } from "@/lib/api";
+import { ApiError, type PerturbationJob } from "@/lib/api";
 
 beforeEach(() => pushMock.mockClear());
-
-const EXPORT: ExportResult = {
-  artifact: {
-    id: "e-1",
-    tenant_id: "t-1",
-    dataset_id: "d-1",
-    version_id: "v-1",
-    format: "csv",
-    row_count: 100,
-    object_key: "exports/e-1.csv",
-    created_at: "2026-07-12T00:00:00Z",
-  },
-  url: "https://minio.local/exports/e-1.csv?sig=abc",
-};
 
 const PJOB: PerturbationJob = {
   id: "pj-1",
@@ -47,10 +33,11 @@ const PJOB: PerturbationJob = {
 };
 
 describe("ExportPanel", () => {
-  it("shows the auto→CSV hint and opens a fresh presigned URL immediately on export", async () => {
+  it("shows the auto→CSV hint and streams the download through the gateway on export", async () => {
+    // No presigned URL: `exportVersion` streams the artifact through an
+    // authenticated fetch and triggers the browser download itself.
     const user = userEvent.setup();
-    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
-    const api = baseMockApi({ exportVersion: vi.fn().mockResolvedValue(EXPORT) });
+    const api = baseMockApi({ exportVersion: vi.fn().mockResolvedValue("customers.csv") });
 
     render(<ExportPanel api={api} datasetId="d-1" versionId="v-1" rowCount={100} />);
     expect(screen.getByText(/auto picks parquet/i)).toBeInTheDocument();
@@ -58,14 +45,10 @@ describe("ExportPanel", () => {
     await user.click(screen.getByRole("button", { name: /^export$/i }));
     await waitFor(() => expect(api.exportVersion).toHaveBeenCalledWith("d-1", "v-1", undefined));
 
-    // The freshly-signed URL is opened immediately — never persisted as a stale href.
-    await waitFor(() =>
-      expect(openSpy).toHaveBeenCalledWith(EXPORT.url, "_blank", "noopener,noreferrer"),
-    );
-    // A "Download again" button re-runs the export (re-signs) rather than reusing a stale link.
+    // No stale href is ever stored: a plain "Download" button re-runs (and re-streams) the export.
+    expect(await screen.findByText(/customers\.csv/i)).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /download/i })).not.toBeInTheDocument();
-    expect(await screen.findByRole("button", { name: /download again/i })).toBeInTheDocument();
-    openSpy.mockRestore();
+    expect(await screen.findByRole("button", { name: /^download$/i })).toBeInTheDocument();
   });
 });
 

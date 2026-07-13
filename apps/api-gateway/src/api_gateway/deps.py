@@ -281,22 +281,37 @@ def get_audio_provider_registry(settings: Settings = Depends(get_settings)) -> M
     )
 
 
+def pick_default_model(configs: list[ModelConfig], preferred: str) -> ModelConfig:
+    """Pick the default `ModelConfig` for tasks with no explicit `model_config_id`.
+
+    Prefers the first config whose `provider` matches `preferred`
+    (case-insensitive) so tenants don't silently default to whichever model
+    happened to be registered first (often a slow local Ollama config); falls
+    back to `configs[0]` if no config for `preferred` exists. Callers must
+    ensure `configs` is non-empty.
+    """
+    for cfg in configs:
+        if cfg.provider.lower() == preferred.lower():
+            return cfg
+    return configs[0]
+
+
 async def get_schema_proposer(
     ctx: TenantContext = Depends(get_tenant_context),
     provider: LLMProvider = Depends(get_llm_provider),
     registry: ModelRegistry = Depends(get_model_registry),
+    settings: Settings = Depends(get_settings),
 ) -> SchemaProposer:
     """Real, LLM-backed `SchemaProposer`.
 
-    Uses the tenant's first configured `ModelConfig` to drive the proposal.
-    (A dedicated "default model for schema proposal" flag is a reasonable
-    follow-up if tenants need to pick a specific model for this.)
-    Overridden in tests via `app.dependency_overrides[get_schema_proposer]`.
+    Uses the tenant's default configured `ModelConfig` (see
+    `pick_default_model`) to drive the proposal. Overridden in tests via
+    `app.dependency_overrides[get_schema_proposer]`.
     """
     configs = await registry.list(ctx.tenant_id)
     if not configs:
         raise HTTPException(400, "no model configured for this tenant; register one first")
-    return LLMSchemaProposer(provider, configs[0])
+    return LLMSchemaProposer(provider, pick_default_model(configs, settings.default_llm_provider))
 
 
 _temporal_client: Client | None = None

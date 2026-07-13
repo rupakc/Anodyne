@@ -94,20 +94,29 @@ def main() -> None:
         version_id = vlist[-1]["id"] if vlist else None
         rec("GET /datasets/{id}/versions", bool(version_id), f"n={len(vlist)}")
 
-    # --- export ---
+    # --- version download (streamed through the gateway -- no presigned URL,
+    # see api_gateway/app.py:download_version) ---
+    if version_id:
+        dl = c.get(f"/datasets/{dsid}/versions/{version_id}/download")
+        rec(
+            "GET version download",
+            dl.status_code == 200 and bool(dl.headers.get("content-type")),
+            f"HTTP {dl.status_code}, content-type={dl.headers.get('content-type')}, "
+            f"disposition={dl.headers.get('content-disposition')}",
+        )
+
+    # --- export (streamed through the gateway -- no presigned URL, see
+    # api_gateway/export_routes.py) ---
     if version_id:
         for fmt in ["csv", "json", "parquet"]:
             r = c.post(f"/datasets/{dsid}/versions/{version_id}/export", json={"format": fmt})
-            url = (r.json() or {}).get("download_url") or (r.json() or {}).get("url") if r.status_code in (200, 201) else None
-            ok = r.status_code in (200, 201)
-            # try fetching the presigned url
-            fetched = ""
-            if url:
-                try:
-                    fetched = f", dl={httpx.get(url, timeout=30).status_code}"
-                except Exception as e:
-                    fetched = f", dl-err={type(e).__name__}"
-            rec(f"POST export [{fmt}]", ok, f"HTTP {r.status_code}{fetched}")
+            ok = r.status_code == 200 and bool(r.headers.get("content-type"))
+            rec(
+                f"POST export [{fmt}]",
+                ok,
+                f"HTTP {r.status_code}, content-type={r.headers.get('content-type')}, "
+                f"disposition={r.headers.get('content-disposition')}",
+            )
 
     # --- perturbation ---
     if version_id:
@@ -128,6 +137,15 @@ def main() -> None:
             rec("evaluate -> run done", st in ("succeeded", "completed"), f"status={st}")
             rep = c.get(f"/evaluations/{rid}/report")
             rec("GET evaluation report", rep.status_code == 200, f"HTTP {rep.status_code}")
+            # Streamed through the gateway -- no presigned URL, see
+            # api_gateway/evaluation_routes.py:download_evaluation_report.
+            for report_fmt in ("html", "json"):
+                repdl = c.get(f"/evaluations/{rid}/report/download", params={"format": report_fmt})
+                rec(
+                    f"GET evaluation report download [{report_fmt}]",
+                    repdl.status_code == 200 and bool(repdl.headers.get("content-type")),
+                    f"HTTP {repdl.status_code}, content-type={repdl.headers.get('content-type')}",
+                )
 
     # --- HITL: require_review parks, approve resumes ---
     if dsid:

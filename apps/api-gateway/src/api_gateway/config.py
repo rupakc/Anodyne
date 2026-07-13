@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     # page was rendered doesn't fail with "Signature has expired". Env:
     # `ANODYNE_PRESIGNED_TTL`.
     presigned_ttl: int = 86400
+    # Preferred provider for LLM tasks that don't pin an explicit
+    # `model_config_id`: the tenant's first config whose `provider` matches
+    # this (case-insensitive) is used; falls back to `configs[0]` if no such
+    # config exists. Avoids silently defaulting to a slow local Ollama config
+    # just because it happened to be registered first. Env:
+    # `ANODYNE_DEFAULT_LLM_PROVIDER`.
+    default_llm_provider: str = "gemini"
 
 
 def get_settings() -> Settings:

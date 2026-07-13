@@ -180,12 +180,15 @@ async def test_export_defaults_to_csv_for_small_dataset(wired) -> None:  # type:
 
     r = await client.post(f"/datasets/{dataset_id}/versions/{version_id}/export", json={})
 
+    # No presigned URL: the just-created artifact's bytes are streamed straight
+    # back through the gateway with a Content-Disposition attachment header.
     assert r.status_code == 200
-    body = r.json()
-    assert body["artifact"]["format"] == "csv"
-    assert body["url"] == f"https://example.test/{body['artifact']['object_key']}"
+    assert r.headers["content-type"].startswith("text/csv")
+    assert "attachment" in r.headers["content-disposition"]
+    assert r.headers["content-disposition"].endswith('.csv"')
     assert exporter.calls == [None]  # no explicit format requested
     assert len(export_repo.exports) == 1
+    assert export_repo.exports[0].format == "csv"
 
 
 async def test_export_honors_explicit_format(wired) -> None:  # type: ignore[no-untyped-def]
@@ -208,7 +211,8 @@ async def test_export_honors_explicit_format(wired) -> None:  # type: ignore[no-
     )
 
     assert r.status_code == 200
-    assert r.json()["artifact"]["format"] == "parquet"
+    assert r.headers["content-type"] == "application/octet-stream"
+    assert r.headers["content-disposition"].endswith('.parquet"')
     assert exporter.calls == ["parquet"]
 
 

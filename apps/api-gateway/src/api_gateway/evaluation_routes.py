@@ -19,12 +19,13 @@ from anodyne_dataset.ports import DatasetRepository
 from anodyne_evaluation.models import EvaluationRun
 from anodyne_evaluation.ports import EvaluationRepository
 from anodyne_workflows.evaluation_workflow import EvaluationInput, EvaluationWorkflow
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 from temporalio.client import Client
 
 from api_gateway import deps
 from api_gateway.config import get_settings
+from api_gateway.downloads import content_disposition
 
 
 class EvaluateRequest(BaseModel):
@@ -67,6 +68,7 @@ def build_router() -> APIRouter:
         repo: DatasetRepository = Depends(deps.get_dataset_repo),
         eval_repo: EvaluationRepository = Depends(deps.get_evaluation_repo),
         client: Client = Depends(deps.get_temporal_client),
+        registry: deps.ModelRegistry = Depends(deps.get_model_registry),
     ) -> dict[str, object]:
         versions = await repo.list_versions(ctx.tenant_id, dataset_id)
         ids = {v.id for v in versions}
@@ -74,6 +76,19 @@ def build_router() -> APIRouter:
             raise HTTPException(404, "dataset version not found")
         if body.reference_version_id is not None and body.reference_version_id not in ids:
             raise HTTPException(404, "reference version not found")
+
+        # An explicit `model_config_id` always wins; otherwise resolve the
+        # tenant's default (prefers the configured `default_llm_provider`,
+        # e.g. Gemini, over whatever config happens to be registered first --
+        # see `deps.pick_default_model`). No crash if the tenant has no
+        # models registered at all: the qualitative judge just runs without
+        # one (mirrors the pre-existing behavior for that case).
+        if body.model_config_id is None:
+            configs = await registry.list(ctx.tenant_id)
+            if configs:
+                body.model_config_id = deps.pick_default_model(
+                    configs, get_settings().default_llm_provider
+                ).id
 
         run = EvaluationRun(
             id=uuid4(),
@@ -136,7 +151,7 @@ def build_router() -> APIRouter:
         ctx: TenantContext = Depends(deps.require("evaluations:read")),
         eval_repo: EvaluationRepository = Depends(deps.get_evaluation_repo),
         object_store: ObjectStore = Depends(deps.get_object_store),
-    ) -> dict[str, str]:
+    ) -> Response:
         if format not in ("html", "json"):
             raise HTTPException(400, f"unsupported format {format!r}; expected 'html' or 'json'")
         run = await eval_repo.get_run(ctx.tenant_id, run_id)
@@ -145,7 +160,14 @@ def build_router() -> APIRouter:
         uri = run.report_html_uri if format == "html" else run.report_uri
         if uri is None:
             raise HTTPException(409, "evaluation report not ready")
-        url = await object_store.presigned_url(uri, expires=get_settings().presigned_ttl)
-        return {"url": url}
+        # Stream the report bytes through the gateway rather than a presigned
+        # URL -- see `download_version` in `app.py` for why.
+        data = await object_store.get(uri)
+        media_type = "text/html" if format == "html" else "application/json"
+        return Response(
+            content=data,
+            media_type=media_type,
+            headers=content_disposition(f"evaluation-{run_id}.{format}"),
+        )
 
     return router

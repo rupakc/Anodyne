@@ -231,11 +231,6 @@ export interface ExportArtifact {
   created_at: string;
 }
 
-export interface ExportResult {
-  artifact: ExportArtifact;
-  url: string;
-}
-
 export const PERTURBATION_FAMILIES = ["noise", "drift", "outliers", "bias", "edge_case"] as const;
 export type PerturbationFamily = (typeof PERTURBATION_FAMILIES)[number];
 
@@ -414,6 +409,27 @@ export function jobStreamUrl(jobId: string, baseUrl: string = WS_BASE): string {
   return `${baseUrl}/jobs/${jobId}/stream`;
 }
 
+/**
+ * Extracts the filename from a `Content-Disposition` response header, e.g.
+ * `attachment; filename="customers.csv"`. Prefers the RFC 5987 extended form
+ * (`filename*=UTF-8''...`) when present; falls back to the plain
+ * `filename="..."` form. Returns `null` if the header is absent or has
+ * neither form (the caller supplies a fallback name in that case).
+ */
+export function filenameFromContentDisposition(header: string | null): string | null {
+  if (!header) return null;
+  const extended = /filename\*=(?:UTF-8'')?([^;]+)/i.exec(header);
+  if (extended?.[1]) {
+    try {
+      return decodeURIComponent(extended[1].trim().replace(/^"|"$/g, ""));
+    } catch {
+      // Malformed percent-encoding: fall through to the plain form below.
+    }
+  }
+  const plain = /filename="?([^";]+)"?/i.exec(header);
+  return plain?.[1]?.trim() || null;
+}
+
 /** Thrown for any non-2xx gateway response; carries the HTTP status for callers that care. */
 export class ApiError extends Error {
   status: number;
@@ -433,8 +449,13 @@ export interface ApiClient {
   generate(id: string, opts?: GenerateOptions): Promise<GenerationJob>;
   getJob(id: string): Promise<GenerationJob>;
   listVersions(id: string): Promise<DatasetVersion[]>;
-  /** Resolves to a presigned, time-limited download URL for one version's artifact. */
-  downloadUrl(datasetId: string, versionId: string): Promise<string>;
+  /**
+   * Streams one version's artifact bytes through the gateway and triggers a
+   * browser download. Deliberately NOT a presigned URL: those can go stale
+   * ("Signature has expired") if the page stays open, the laptop sleeps, or
+   * the clock jumps between load and click. Resolves to the filename used.
+   */
+  downloadVersionFile(datasetId: string, versionId: string): Promise<string>;
   /** Lists the starter template catalog (`GET /templates`). */
   listTemplates(): Promise<DatasetTemplate[]>;
   /** Builds and persists a `DatasetSpec` from a catalog template (`POST /datasets/from-template`). */
@@ -452,7 +473,12 @@ export interface ApiClient {
   createImageDataset(input: CreateImageDatasetInput): Promise<DatasetSpec>;
 
   // --- export ---
-  exportVersion(datasetId: string, versionId: string, format?: ExportFormat): Promise<ExportResult>;
+  /**
+   * Creates the export artifact server-side, then streams its bytes through
+   * the gateway and triggers a browser download (no presigned URL — see
+   * `downloadVersionFile`). Resolves to the filename used.
+   */
+  exportVersion(datasetId: string, versionId: string, format?: ExportFormat): Promise<string>;
 
   // --- perturbation ---
   perturb(datasetId: string, versionId: string, input: PerturbInput): Promise<PerturbationJob>;
@@ -463,8 +489,12 @@ export interface ApiClient {
   evaluate(datasetId: string, versionId: string, input: EvaluateInput): Promise<EvaluationRun>;
   getEvaluation(id: string): Promise<EvaluationRun>;
   getEvaluationReport(id: string): Promise<EvaluationReport>;
-  /** Fresh presigned download URL for the evaluation report in the given format. */
-  reportDownloadUrl(id: string, format?: "html" | "json"): Promise<string>;
+  /**
+   * Streams the evaluation report through the gateway and triggers a browser
+   * download (no presigned URL — see `downloadVersionFile`). Resolves to the
+   * filename used.
+   */
+  downloadReport(id: string, format?: "html" | "json"): Promise<string>;
 
   // --- HITL: reviews / annotations / feedback ---
   listReviews(status?: string): Promise<ReviewItem[]>;
@@ -522,6 +552,57 @@ export function createApiClient(accessToken: string | undefined, baseUrl: string
     return (await res.json()) as T;
   }
 
+  /**
+   * Authenticated fetch that streams a binary response straight into a
+   * browser download, instead of the gateway handing back a presigned
+   * MinIO/S3 URL (which can go stale — "Signature has expired" — if the page
+   * stays open, the laptop sleeps, or the clock jumps between load and
+   * click). Derives the filename from `Content-Disposition`, falling back to
+   * `opts.fallbackName`. Resolves to the filename actually used.
+   */
+  async function downloadToFile(
+    path: string,
+    opts?: { method?: string; body?: unknown; fallbackName?: string },
+  ): Promise<string> {
+    const headers = new Headers();
+    if (accessToken) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+    if (opts?.body !== undefined) {
+      headers.set("Content-Type", "application/json");
+    }
+
+    const res = await fetch(`${baseUrl}${path}`, {
+      method: opts?.method ?? "GET",
+      headers,
+      body: opts?.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new ApiError(
+        res.status,
+        detail || `${opts?.method ?? "GET"} ${path} failed with ${res.status}`,
+      );
+    }
+
+    const blob = await res.blob();
+    const filename =
+      filenameFromContentDisposition(res.headers.get("Content-Disposition")) ??
+      opts?.fallbackName ??
+      "download";
+
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+
+    return filename;
+  }
+
   return {
     createDataset: (input) =>
       request<DatasetSpec>("/datasets", { method: "POST", body: JSON.stringify(input) }),
@@ -539,10 +620,10 @@ export function createApiClient(accessToken: string | undefined, baseUrl: string
       }),
     getJob: (id) => request<GenerationJob>(`/jobs/${id}`),
     listVersions: (id) => request<DatasetVersion[]>(`/datasets/${id}/versions`),
-    downloadUrl: (datasetId, versionId) =>
-      request<{ url: string }>(`/datasets/${datasetId}/versions/${versionId}/download`).then(
-        (r) => r.url,
-      ),
+    downloadVersionFile: (datasetId, versionId) =>
+      downloadToFile(`/datasets/${datasetId}/versions/${versionId}/download`, {
+        fallbackName: `dataset-${datasetId}-version-${versionId}`,
+      }),
     listTemplates: () => request<DatasetTemplate[]>("/templates"),
     createFromTemplate: (input) =>
       request<DatasetSpec>("/datasets/from-template", {
@@ -567,9 +648,10 @@ export function createApiClient(accessToken: string | undefined, baseUrl: string
       request<DatasetSpec>("/datasets/image", { method: "POST", body: JSON.stringify(input) }),
 
     exportVersion: (datasetId, versionId, format) =>
-      request<ExportResult>(`/datasets/${datasetId}/versions/${versionId}/export`, {
+      downloadToFile(`/datasets/${datasetId}/versions/${versionId}/export`, {
         method: "POST",
-        body: JSON.stringify(format ? { format } : {}),
+        body: format ? { format } : {},
+        fallbackName: `export-${datasetId}-${versionId}`,
       }),
 
     perturb: (datasetId, versionId, input) =>
@@ -588,10 +670,10 @@ export function createApiClient(accessToken: string | undefined, baseUrl: string
       }),
     getEvaluation: (id) => request<EvaluationRun>(`/evaluations/${id}`),
     getEvaluationReport: (id) => request<EvaluationReport>(`/evaluations/${id}/report`),
-    reportDownloadUrl: (id, format = "html") =>
-      request<{ url: string }>(
-        `/evaluations/${id}/report/download?format=${encodeURIComponent(format)}`,
-      ).then((r) => r.url),
+    downloadReport: (id, format = "html") =>
+      downloadToFile(`/evaluations/${id}/report/download?format=${encodeURIComponent(format)}`, {
+        fallbackName: `evaluation-${id}.${format}`,
+      }),
 
     listReviews: (status) =>
       request<ReviewItem[]>(`/reviews${status ? `?status=${encodeURIComponent(status)}` : ""}`),

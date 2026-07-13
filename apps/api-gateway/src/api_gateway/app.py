@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 from uuid import UUID, uuid4
 
+import fastapi
 from anodyne_core.models import LLMRequest, TenantContext
 from anodyne_core.ports import LLMProvider, ObjectStore
 from anodyne_dataset.models import (
@@ -44,6 +45,7 @@ from temporalio.client import Client
 from api_gateway import deps
 from api_gateway.config import get_settings
 from api_gateway.deps import ModelRegistry, RedisLike
+from api_gateway.downloads import content_disposition, media_type_and_ext, safe_filename
 from api_gateway.evaluation_routes import build_router as build_evaluation_router
 from api_gateway.export_routes import router as export_router
 from api_gateway.hitl_routes import build_router as build_hitl_router
@@ -610,7 +612,7 @@ def create_app() -> FastAPI:
                     raise HTTPException(
                         400, "no model configured for this tenant; register one first"
                     )
-                cfg = configs[0]
+                cfg = deps.pick_default_model(configs, get_settings().default_llm_provider)
             model_config_id = str(cfg.id)
 
         job = GenerationJob(id=uuid4(), tenant_id=ctx.tenant_id, dataset_id=dataset_id)
@@ -739,15 +741,24 @@ def create_app() -> FastAPI:
         ctx: TenantContext = Depends(deps.require("datasets:read")),
         repo: DatasetRepository = Depends(deps.get_dataset_repo),
         object_store: ObjectStore = Depends(deps.get_object_store),
-    ) -> dict[str, str]:
+    ) -> fastapi.Response:
         versions = await repo.list_versions(ctx.tenant_id, dataset_id)
         version = next((v for v in versions if v.id == version_id), None)
         if version is None:
             raise HTTPException(404, "version not found")
-        url = await object_store.presigned_url(
-            version.artifact_uri, expires=get_settings().presigned_ttl
+        # Stream the artifact bytes through the (authenticated) gateway rather
+        # than handing the browser a presigned MinIO/S3 URL: a presigned URL
+        # can go stale ("Signature has expired") if the page stays open, the
+        # laptop sleeps, or the clock jumps between page load and click.
+        data = await object_store.get(version.artifact_uri)
+        media_type, ext = media_type_and_ext(version.format)
+        spec = await repo.get_spec(ctx.tenant_id, dataset_id)
+        base_name = safe_filename(spec.name if spec is not None else str(dataset_id))
+        return fastapi.Response(
+            content=data,
+            media_type=media_type,
+            headers=content_disposition(f"{base_name}.{ext}"),
         )
-        return {"url": url}
 
     # Evaluation Engine (sub-system F) routes live in a focused module.
     app.include_router(build_evaluation_router())

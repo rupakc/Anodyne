@@ -81,10 +81,11 @@ export function DatasetVersions({ datasetId, accessToken, api: injectedApi }: Da
     setDownloadingId(versionId);
     setDownloadError(null);
     try {
-      const url = await api.downloadUrl(datasetId, versionId);
-      window.open(url, "_blank", "noopener,noreferrer");
+      // Streams the artifact through the gateway and triggers a browser
+      // download directly -- no presigned URL to open.
+      await api.downloadVersionFile(datasetId, versionId);
     } catch (err) {
-      setDownloadError(err instanceof Error ? err.message : "Failed to get a download link.");
+      setDownloadError(err instanceof Error ? err.message : "Failed to download this version.");
     } finally {
       setDownloadingId(null);
     }
@@ -139,7 +140,7 @@ export function DatasetVersions({ datasetId, accessToken, api: injectedApi }: Da
                     </div>
                     <Button type="button" onClick={() => handleDownload(v.id)} disabled={downloadingId === v.id}>
                       <Download className="size-3.5" data-icon="inline-start" />
-                      {downloadingId === v.id ? "Preparing…" : "Download"}
+                      {downloadingId === v.id ? "Downloading…" : "Download"}
                     </Button>
                   </div>
 

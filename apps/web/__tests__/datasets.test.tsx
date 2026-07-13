@@ -130,13 +130,15 @@ describe("dataset versions + download", () => {
     expect(await screen.findByText(/no versions yet/i)).toBeInTheDocument();
   });
 
-  it("downloads a version by resolving its presigned URL and opening it", async () => {
+  it("downloads a version by streaming it through the gateway", async () => {
+    // No presigned URL involved: `downloadVersionFile` streams the artifact
+    // through an authenticated fetch and triggers the browser download
+    // itself, so the component just needs to call it and not blow up.
     const user = userEvent.setup();
-    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     const api = makeMockApi({
       getDataset: vi.fn().mockResolvedValue(DATASETS[0]),
       listVersions: vi.fn().mockResolvedValue(VERSIONS),
-      downloadUrl: vi.fn().mockResolvedValue("https://minio.local/presigned/version-1?sig=abc"),
+      downloadVersionFile: vi.fn().mockResolvedValue("support-tickets.parquet"),
     });
 
     render(<DatasetVersions datasetId="dataset-1" api={api} />);
@@ -145,24 +147,17 @@ describe("dataset versions + download", () => {
     const firstRow = within(list).getByText(/PARQUET · 500 rows/).closest("li")!;
     await user.click(within(firstRow).getByRole("button", { name: /download/i }));
 
-    await waitFor(() => expect(api.downloadUrl).toHaveBeenCalledWith("dataset-1", "version-1"));
     await waitFor(() =>
-      expect(openSpy).toHaveBeenCalledWith(
-        "https://minio.local/presigned/version-1?sig=abc",
-        "_blank",
-        "noopener,noreferrer",
-      ),
+      expect(api.downloadVersionFile).toHaveBeenCalledWith("dataset-1", "version-1"),
     );
-
-    openSpy.mockRestore();
   });
 
-  it("surfaces an inline error if getting the download link fails", async () => {
+  it("surfaces an inline error if the streamed download fails", async () => {
     const user = userEvent.setup();
     const api = makeMockApi({
       getDataset: vi.fn().mockResolvedValue(DATASETS[0]),
       listVersions: vi.fn().mockResolvedValue(VERSIONS),
-      downloadUrl: vi.fn().mockRejectedValue(new Error("object not found")),
+      downloadVersionFile: vi.fn().mockRejectedValue(new Error("object not found")),
     });
 
     render(<DatasetVersions datasetId="dataset-1" api={api} />);

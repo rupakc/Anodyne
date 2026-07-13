@@ -112,11 +112,11 @@ export function EvaluationView({
       setDownloading(format);
       setDownloadError(null);
       try {
-        // Fetch a freshly-signed URL on every click so it can never be stale.
-        const url = await api.reportDownloadUrl(evaluationId, format);
-        window.open(url, "_blank", "noopener,noreferrer");
+        // Streams the report through the gateway and triggers a browser
+        // download directly -- no presigned URL to open.
+        await api.downloadReport(evaluationId, format);
       } catch (err) {
-        setDownloadError(err instanceof Error ? err.message : "Failed to get a download link.");
+        setDownloadError(err instanceof Error ? err.message : "Failed to download the report.");
       } finally {
         setDownloading(null);
       }
@@ -151,7 +151,7 @@ export function EvaluationView({
                 onClick={() => handleDownload("html")}
                 disabled={downloading !== null}
               >
-                {downloading === "html" ? "Preparing…" : "Download report (HTML)"}
+                {downloading === "html" ? "Downloading…" : "Download report (HTML)"}
               </Button>
               <Button
                 type="button"
@@ -159,7 +159,7 @@ export function EvaluationView({
                 onClick={() => handleDownload("json")}
                 disabled={downloading !== null}
               >
-                {downloading === "json" ? "Preparing…" : "Download report (JSON)"}
+                {downloading === "json" ? "Downloading…" : "Download report (JSON)"}
               </Button>
             </div>
           ) : undefined

@@ -5,15 +5,17 @@ import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Select } from "@/components/ui/form";
 import { ErrorAlert, InfoNote } from "@/components/ui/feedback";
-import { EXPORT_FORMATS, type ApiClient, type ExportFormat, type ExportResult } from "@/lib/api";
+import { EXPORT_FORMATS, type ApiClient, type ExportFormat } from "@/lib/api";
 
 /** Above this row count the gateway defaults an "auto" export to Parquet. */
 const PARQUET_THRESHOLD = 500_000;
 
 /**
- * Export one dataset version to a chosen format (or "auto"), surfacing the
- * presigned download URL the gateway returns. Mirrors the >500K-rows →
- * Parquet default the exporter applies server-side.
+ * Export one dataset version to a chosen format (or "auto"): the gateway
+ * creates the export artifact, then its bytes are streamed straight through
+ * an authenticated fetch and saved as a browser download (no presigned URL —
+ * see `downloadToFile` in `lib/api.ts`). Mirrors the >500K-rows → Parquet
+ * default the exporter applies server-side.
  */
 export function ExportPanel({
   api,
@@ -28,20 +30,15 @@ export function ExportPanel({
 }) {
   const [format, setFormat] = useState<ExportFormat | "">("");
   const [pending, setPending] = useState(false);
-  const [result, setResult] = useState<ExportResult | null>(null);
+  const [downloadedName, setDownloadedName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function handleExport() {
     setPending(true);
     setError(null);
-    setResult(null);
     try {
-      const res = await api.exportVersion(datasetId, versionId, format || undefined);
-      // Open the freshly-signed URL immediately so it can never go stale between
-      // render and click. To download again the user re-runs the export (which
-      // re-signs) — we never persist an href for a later click.
-      window.open(res.url, "_blank", "noopener,noreferrer");
-      setResult(res);
+      const filename = await api.exportVersion(datasetId, versionId, format || undefined);
+      setDownloadedName(filename);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export failed. Please try again.");
     } finally {
@@ -82,12 +79,9 @@ export function ExportPanel({
 
       {error ? <ErrorAlert>{error}</ErrorAlert> : null}
 
-      {result ? (
+      {downloadedName ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sage/40 bg-sage/10 px-4 py-3 text-sm">
-          <span>
-            {result.artifact.format.toUpperCase()} export ready · download started ·{" "}
-            {result.artifact.row_count.toLocaleString()} rows
-          </span>
+          <span>{downloadedName} · download started</span>
           <button
             type="button"
             onClick={handleExport}
@@ -95,7 +89,7 @@ export function ExportPanel({
             className="inline-flex items-center gap-1.5 rounded-lg bg-terracotta px-3 py-1.5 text-sm font-medium text-terracotta-foreground transition-colors hover:bg-terracotta/85 disabled:opacity-60"
           >
             <Download className="size-3.5" />
-            Download again
+            {pending ? "Downloading…" : "Download"}
           </button>
         </div>
       ) : null}

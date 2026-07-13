@@ -16,6 +16,7 @@ from anodyne_dataset.models import (
 )
 from anodyne_dataset.ports import DatasetRepository, SchemaProposer
 from anodyne_generation.proposer import SchemaProposalError
+from anodyne_hitl.models import ReviewKind, ReviewStatus, ReviewTask
 from anodyne_workflows.workflow import GenerationInput, GenerationWorkflow
 from api_gateway import deps
 from api_gateway.app import create_app
@@ -81,6 +82,13 @@ class _FakeDatasetRepository(DatasetRepository):
 
     async def list_versions(self, tenant_id: UUID, dataset_id: UUID) -> list[DatasetVersion]:
         return [v for v in self.versions.get(dataset_id, []) if v.tenant_id == tenant_id]
+
+    async def get_version(self, tenant_id: UUID, version_id: UUID) -> DatasetVersion | None:
+        for versions in self.versions.values():
+            for v in versions:
+                if v.id == version_id and v.tenant_id == tenant_id:
+                    return v
+        return None
 
 
 class _FakeHandle:
@@ -184,6 +192,32 @@ class _FakePubSub:
 
     async def close(self) -> None:
         pass
+
+
+class _FakeReviewRepo:
+    """In-memory `ReviewRepository` for the opt-in human-review path."""
+
+    def __init__(self) -> None:
+        self.rows: dict[UUID, ReviewTask] = {}
+
+    async def create(self, task: ReviewTask) -> None:
+        self.rows[task.id] = task
+
+    async def get(self, tenant_id: UUID, review_id: UUID) -> ReviewTask | None:
+        t = self.rows.get(review_id)
+        return t if t and t.tenant_id == tenant_id else None
+
+    async def list_for_tenant(
+        self, tenant_id: UUID, status: ReviewStatus | None = None
+    ) -> list[ReviewTask]:
+        return [
+            t
+            for t in self.rows.values()
+            if t.tenant_id == tenant_id and (status is None or t.status == status)
+        ]
+
+    async def save(self, task: ReviewTask) -> None:
+        self.rows[task.id] = task
 
 
 @pytest.fixture
@@ -356,6 +390,43 @@ async def test_generate_starts_workflow_and_requires_write(wired):  # type: igno
     app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.VIEWER, tid)
     r = await client.post(f"/datasets/{dataset_id}/generate", json={"seed": 1})
     assert r.status_code == 403
+
+
+async def test_generate_with_require_review_parks_and_creates_pending_review(wired):  # type: ignore[no-untyped-def]
+    """Opt-in path: `require_review=True` starts the workflow WITHOUT the eager
+    `approve_schema` signal (so it parks at its HITL gate) and creates a pending
+    `ReviewTask` scoped to the tenant. Approving via the reviews route then
+    signals `approve_schema` to resume it."""
+    client, app, repo, fake_client = wired
+    tid = uuid4()
+    review_repo = _FakeReviewRepo()
+    app.dependency_overrides[deps.get_tenant_context] = lambda: _ctx(Role.MEMBER, tid)
+    app.dependency_overrides[deps.get_review_repo] = lambda: review_repo
+
+    created = await client.post(
+        "/datasets", json={"name": "d", "description": "x", "target_rows": 250}
+    )
+    dataset_id = created.json()["id"]
+
+    r = await client.post(
+        f"/datasets/{dataset_id}/generate", json={"seed": 7, "require_review": True}
+    )
+    assert r.status_code == 202
+    job = r.json()
+
+    # Workflow started but parked (no eager approve_schema signal).
+    assert len(fake_client.calls) == 1
+    assert fake_client.calls[0]["start_signal"] is None
+    assert fake_client.calls[0]["id"] == f"gen-{job['id']}"
+
+    # A pending schema-approval review task now exists for this tenant.
+    pending = await review_repo.list_for_tenant(tid, ReviewStatus.PENDING)
+    assert len(pending) == 1
+    task = pending[0]
+    assert task.kind == ReviewKind.SCHEMA_APPROVAL
+    assert task.workflow_id == f"gen-{job['id']}"
+    assert str(task.target_id) == dataset_id
+    assert task.status == ReviewStatus.PENDING
 
 
 async def test_get_job_status(wired):  # type: ignore[no-untyped-def]

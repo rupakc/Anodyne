@@ -47,6 +47,17 @@ class DatasetRepository(ABC):
     @abstractmethod
     async def list_versions(self, tenant_id: UUID, dataset_id: UUID) -> list[DatasetVersion]: ...
 
+    @abstractmethod
+    async def get_version(self, tenant_id: UUID, version_id: UUID) -> DatasetVersion | None:
+        """Look up a single version by id alone (no `dataset_id` needed).
+
+        Additive for sub-system G (`POST /feedback`'s target is a bare
+        `target_id`, with no `dataset_id` in the URL to scope
+        `list_versions`). `SqlDatasetRepository` is the only real subclass of
+        this ABC in the repo -- every other consumer overrides the port with a
+        duck-typed fake, so this new abstract method breaks nothing else.
+        """
+
 
 class Generator(ABC):
     @abstractmethod

@@ -17,6 +17,7 @@ vi.mock("next/navigation", () => ({
 
 import { Wizard } from "@/app/app/new/wizard";
 import type { ApiClient, DatasetSpec, DatasetTemplate, GenerationJob } from "@/lib/api";
+import { baseMockApi } from "./mock-api";
 
 const PROPOSED_SPEC: DatasetSpec = {
   id: "dataset-1",
@@ -66,22 +67,17 @@ const SPEC_FROM_TEMPLATE: DatasetSpec = {
 };
 
 function makeMockApi(overrides: Partial<ApiClient> = {}): ApiClient {
-  return {
+  return baseMockApi({
     createDataset: vi.fn().mockResolvedValue(PROPOSED_SPEC),
-    listDatasets: vi.fn(),
-    getDataset: vi.fn(),
     updateDataset: vi.fn().mockImplementation(async (id: string, patch) => ({
       ...PROPOSED_SPEC,
       ...patch,
     })),
     generate: vi.fn().mockResolvedValue(GENERATED_JOB),
-    getJob: vi.fn(),
-    listVersions: vi.fn(),
-    downloadUrl: vi.fn(),
     listTemplates: vi.fn().mockResolvedValue([CUSTOMERS_TEMPLATE]),
     createFromTemplate: vi.fn().mockResolvedValue(SPEC_FROM_TEMPLATE),
     ...overrides,
-  };
+  });
 }
 
 async function fillDescribeStep(user: ReturnType<typeof userEvent.setup>) {
@@ -144,8 +140,30 @@ describe("create-from-description wizard", () => {
 
     await user.click(screen.getByRole("button", { name: /generate dataset/i }));
 
-    await waitFor(() => expect(api.generate).toHaveBeenCalledWith("dataset-1"));
+    // Human review is opt-in: the default generate call leaves it off.
+    await waitFor(() =>
+      expect(api.generate).toHaveBeenCalledWith("dataset-1", { require_review: false }),
+    );
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/app/jobs/job-1"));
+  });
+
+  it("passes require_review when the human-review toggle is enabled", async () => {
+    const user = userEvent.setup();
+    const api = makeMockApi();
+
+    render(<Wizard api={api} />);
+
+    await fillDescribeStep(user);
+    await screen.findByRole("heading", { name: /review the proposed schema/i });
+    await user.click(screen.getByRole("button", { name: /save & continue/i }));
+
+    await screen.findByRole("heading", { name: /confirm & generate/i });
+    await user.click(screen.getByRole("checkbox", { name: /require human review/i }));
+    await user.click(screen.getByRole("button", { name: /generate dataset/i }));
+
+    await waitFor(() =>
+      expect(api.generate).toHaveBeenCalledWith("dataset-1", { require_review: true }),
+    );
   });
 
   it("supports going back from review to describe without losing the proposal", async () => {

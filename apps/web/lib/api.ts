@@ -76,13 +76,20 @@ export interface DatasetVersion {
   format: string;
   row_count: number;
   checksum: string;
+  /** Present on derived versions (e.g. produced by a perturbation run). */
+  parent_version_id?: string | null;
   created_at: string;
 }
+
+export type DatasetSource = "description" | "sample";
 
 export interface CreateDatasetInput {
   name: string;
   description: string;
   target_rows: number;
+  /** `POST /datasets` also accepts `source`/`modality`; defaults keep the classic tabular-from-description flow. */
+  source?: DatasetSource;
+  modality?: Modality;
 }
 
 /**
@@ -115,9 +122,282 @@ export interface UpdateDatasetInput {
 
 export interface GenerateOptions {
   seed?: number;
+  /** Optional provider override (`model_config_id`) for LLM-backed modalities. */
+  model_config_id?: string;
+  /**
+   * Opt into a human-review gate before generation runs. When true the gateway
+   * parks the workflow and creates a pending review task (see `/app/reviews`);
+   * defaults to false (auto-approve, the historical behavior).
+   */
+  require_review?: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Sub-system H additions: providers, extra modalities, export, perturbation,
+// evaluation, and the (in-flight) HITL review/annotation/feedback contract.
+// Field names mirror the gateway route modules exactly; see the design note
+// docs/superpowers/specs/2026-07-12-web-ui-h-design.md for the endpoint map.
+// ---------------------------------------------------------------------------
+
+/** The four tenant-scoped provider registries the gateway exposes, by URL segment. */
+export type ProviderKind = "models" | "image-providers" | "video-providers" | "audio-providers";
+
+export const PROVIDER_KINDS: { kind: ProviderKind; label: string; modality: Modality | "llm" }[] = [
+  { kind: "models", label: "LLM / Text", modality: "llm" },
+  { kind: "image-providers", label: "Image", modality: "image" },
+  { kind: "audio-providers", label: "Audio", modality: "audio" },
+  { kind: "video-providers", label: "Video", modality: "video" },
+];
+
+/** `ModelConfig` as returned by every provider registry (secret_ref stripped server-side). */
+export interface ProviderConfig {
+  id: string;
+  tenant_id: string;
+  name: string;
+  provider: string;
+  model: string;
+  params: Record<string, unknown>;
+  api_base: string | null;
+  enabled: boolean;
+}
+
+export interface RegisterProviderInput {
+  name: string;
+  provider: string;
+  model: string;
+  api_key?: string | null;
+  api_base?: string | null;
+  params?: Record<string, unknown>;
+}
+
+/** One column of a profiled sample (`POST /datasets/{id}/sample`). */
+export interface ColumnProfile {
+  name: string;
+  semantic_type: string;
+  nullable: boolean;
+  null_rate: number;
+  distinct_count?: number | null;
+  min?: number | null;
+  max?: number | null;
+  mean?: number | null;
+  std?: number | null;
+  categories?: unknown[] | null;
+}
+
+export interface SampleProfile {
+  id: string;
+  tenant_id: string;
+  dataset_id: string;
+  row_count: number;
+  columns: ColumnProfile[];
+  correlations: Record<string, unknown>;
+  sample_uri: string;
+  sample_filename: string;
+  created_at: string;
+}
+
+export interface SampleUploadResult {
+  dataset: DatasetSpec;
+  profile: SampleProfile;
+}
+
+export interface CreateAudioDatasetInput {
+  name: string;
+  description?: string;
+  target_rows: number;
+  directives?: Record<string, unknown>;
+}
+
+export interface CreateImageDatasetInput {
+  name: string;
+  description?: string;
+  target_count: number;
+  labels?: string[];
+  directives?: Record<string, unknown>;
+}
+
+export type ExportFormat = "csv" | "json" | "parquet" | "arrow";
+
+export const EXPORT_FORMATS: ExportFormat[] = ["csv", "json", "parquet", "arrow"];
+
+export interface ExportArtifact {
+  id: string;
+  tenant_id: string;
+  dataset_id: string;
+  version_id: string;
+  format: string;
+  row_count: number;
+  object_key: string;
+  created_at: string;
+}
+
+export interface ExportResult {
+  artifact: ExportArtifact;
+  url: string;
+}
+
+export const PERTURBATION_FAMILIES = ["noise", "drift", "outliers", "bias", "edge_case"] as const;
+export type PerturbationFamily = (typeof PERTURBATION_FAMILIES)[number];
+
+export interface PerturbInput {
+  family: PerturbationFamily;
+  intensity?: number;
+  target_fields?: string[];
+  params?: Record<string, unknown>;
+  seed?: number;
+}
+
+export interface PerturbationJob {
+  id: string;
+  tenant_id: string;
+  dataset_id: string;
+  parent_version_id: string;
+  spec: Record<string, unknown>;
+  status: JobStatus;
+  progress: number;
+  message: string;
+  workflow_id?: string | null;
+  result_version_id?: string | null;
+  created_at: string;
+}
+
+export const EVAL_DIMENSIONS = [
+  "fidelity",
+  "diversity",
+  "privacy",
+  "utility",
+  "bias",
+  "qualitative",
+] as const;
+export type EvalDimension = (typeof EVAL_DIMENSIONS)[number];
+
+export interface EvaluateInput {
+  reference_version_id?: string;
+  seed?: number;
+  sensitive_field?: string;
+  target_field?: string;
+  text_column?: string;
+  model_config_id?: string;
+  sample_rows?: number;
+  weights?: Record<string, number>;
+}
+
+export interface EvaluationRun {
+  id: string;
+  tenant_id: string;
+  dataset_id: string;
+  dataset_version_id: string;
+  reference_version_id?: string | null;
+  status: JobStatus;
+  progress: number;
+  message: string;
+  workflow_id?: string | null;
+  report_uri?: string | null;
+  report_html_uri?: string | null;
+  overall_score?: number | null;
+  config: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ExpertScore {
+  dimension: string;
+  score: number;
+  rationale: string;
+  metrics: Record<string, unknown>;
+  recommendations: string[];
+}
+
+export interface EvaluationReport {
+  id: string;
+  tenant_id: string;
+  dataset_id: string;
+  dataset_version_id: string;
+  reference_version_id?: string | null;
+  overall_score: number;
+  expert_scores: ExpertScore[];
+  weights: Record<string, number>;
+  recommendations: string[];
+  summary: string;
+  created_at: string;
+}
+
+// --- HITL contract (routes built in parallel; callers tolerate 404/501) -----
+
+export type ReviewDecision = "approve" | "reject" | "changes_requested";
+
+export interface ReviewItem {
+  id: string;
+  tenant_id?: string;
+  status: string;
+  kind?: string;
+  target_type?: string;
+  target_id?: string;
+  title?: string;
+  summary?: string;
+  payload?: Record<string, unknown>;
+  created_at?: string;
+}
+
+export interface ReviewDecisionInput {
+  decision: ReviewDecision;
+  comment?: string;
+}
+
+export interface Annotation {
+  id: string;
+  tenant_id?: string;
+  dataset_id?: string;
+  version_id?: string;
+  row_index?: number | null;
+  record_id?: string | null;
+  label?: string | null;
+  tags?: string[];
+  comment?: string | null;
+  created_at?: string;
+}
+
+export interface CreateAnnotationInput {
+  row_index?: number;
+  record_id?: string;
+  label?: string;
+  tags?: string[];
+  comment?: string;
+}
+
+export interface FeedbackInput {
+  target_type: string;
+  target_id: string;
+  rating?: number;
+  thumbs?: "up" | "down";
+  comment?: string;
+  expert_override?: Record<string, unknown>;
 }
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
+
+/** Message shown when a credential submission is blocked for being cleartext. */
+export const HTTPS_REQUIRED_MESSAGE =
+  "HTTPS required to submit credentials. Configure the gateway (NEXT_PUBLIC_API_BASE) to use https, or connect over localhost for local development.";
+
+/**
+ * Whether submitting a secret (e.g. a provider `api_key`) to `baseUrl` would
+ * send it in cleartext. `http://` is only safe to a loopback host
+ * (localhost / 127.0.0.1 / [::1]) for local dev; any other `http://` host must
+ * be blocked so credentials never traverse the network unencrypted. `https`
+ * (and a malformed/relative base, which stays same-origin) is always allowed.
+ */
+export function isCredentialSubmissionInsecure(baseUrl: string = API_BASE): boolean {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:") return false;
+  const host = url.hostname.toLowerCase();
+  const loopback = host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  return !loopback;
+}
 
 /**
  * Base URL for the live job-progress socket (`WS /jobs/{id}/stream`). Reads
@@ -159,6 +439,44 @@ export interface ApiClient {
   listTemplates(): Promise<DatasetTemplate[]>;
   /** Builds and persists a `DatasetSpec` from a catalog template (`POST /datasets/from-template`). */
   createFromTemplate(input: CreateFromTemplateInput): Promise<DatasetSpec>;
+
+  // --- providers (per-modality registries) ---
+  listProviders(kind: ProviderKind): Promise<ProviderConfig[]>;
+  registerProvider(kind: ProviderKind, input: RegisterProviderInput): Promise<ProviderConfig>;
+  deleteProvider(kind: ProviderKind, id: string): Promise<void>;
+
+  // --- extra generation modalities ---
+  /** Uploads a sample file (multipart) and returns the created dataset + its profile. */
+  uploadSample(datasetId: string, file: File): Promise<SampleUploadResult>;
+  createAudioDataset(input: CreateAudioDatasetInput): Promise<DatasetSpec>;
+  createImageDataset(input: CreateImageDatasetInput): Promise<DatasetSpec>;
+
+  // --- export ---
+  exportVersion(datasetId: string, versionId: string, format?: ExportFormat): Promise<ExportResult>;
+
+  // --- perturbation ---
+  perturb(datasetId: string, versionId: string, input: PerturbInput): Promise<PerturbationJob>;
+  getPerturbationJob(id: string): Promise<PerturbationJob>;
+  listPerturbationJobs(datasetId: string): Promise<PerturbationJob[]>;
+
+  // --- evaluation ---
+  evaluate(datasetId: string, versionId: string, input: EvaluateInput): Promise<EvaluationRun>;
+  getEvaluation(id: string): Promise<EvaluationRun>;
+  getEvaluationReport(id: string): Promise<EvaluationReport>;
+  evaluationReportUrl(id: string): Promise<string>;
+
+  // --- HITL: reviews / annotations / feedback ---
+  listReviews(status?: string): Promise<ReviewItem[]>;
+  getReview(id: string): Promise<ReviewItem>;
+  submitReviewDecision(id: string, input: ReviewDecisionInput): Promise<ReviewItem>;
+  listAnnotations(datasetId: string, versionId: string): Promise<Annotation[]>;
+  createAnnotation(
+    datasetId: string,
+    versionId: string,
+    input: CreateAnnotationInput,
+  ): Promise<Annotation>;
+  deleteAnnotation(id: string): Promise<void>;
+  submitFeedback(input: FeedbackInput): Promise<void>;
 }
 
 /**
@@ -189,6 +507,20 @@ export function createApiClient(accessToken: string | undefined, baseUrl: string
     return (await res.json()) as T;
   }
 
+  /** Multipart variant: never sets `Content-Type` so the browser adds the boundary. */
+  async function requestForm<T>(path: string, form: FormData): Promise<T> {
+    const headers = new Headers();
+    if (accessToken) {
+      headers.set("Authorization", `Bearer ${accessToken}`);
+    }
+    const res = await fetch(`${baseUrl}${path}`, { method: "POST", body: form, headers });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new ApiError(res.status, detail || `POST ${path} failed with ${res.status}`);
+    }
+    return (await res.json()) as T;
+  }
+
   return {
     createDataset: (input) =>
       request<DatasetSpec>("/datasets", { method: "POST", body: JSON.stringify(input) }),
@@ -199,7 +531,10 @@ export function createApiClient(accessToken: string | undefined, baseUrl: string
     generate: (id, opts) =>
       request<GenerationJob>(`/datasets/${id}/generate`, {
         method: "POST",
-        body: JSON.stringify({ seed: opts?.seed ?? 0 }),
+        body: JSON.stringify({
+          seed: opts?.seed ?? 0,
+          ...(opts?.require_review ? { require_review: true } : {}),
+        }),
       }),
     getJob: (id) => request<GenerationJob>(`/jobs/${id}`),
     listVersions: (id) => request<DatasetVersion[]>(`/datasets/${id}/versions`),
@@ -213,5 +548,65 @@ export function createApiClient(accessToken: string | undefined, baseUrl: string
         method: "POST",
         body: JSON.stringify(input),
       }),
+
+    listProviders: (kind) => request<ProviderConfig[]>(`/${kind}`),
+    registerProvider: (kind, input) =>
+      request<ProviderConfig>(`/${kind}`, { method: "POST", body: JSON.stringify(input) }),
+    deleteProvider: (kind, id) =>
+      request<void>(`/${kind}/${id}`, { method: "DELETE" }),
+
+    uploadSample: (datasetId, file) => {
+      const form = new FormData();
+      form.append("file", file);
+      return requestForm<SampleUploadResult>(`/datasets/${datasetId}/sample`, form);
+    },
+    createAudioDataset: (input) =>
+      request<DatasetSpec>("/datasets/audio", { method: "POST", body: JSON.stringify(input) }),
+    createImageDataset: (input) =>
+      request<DatasetSpec>("/datasets/image", { method: "POST", body: JSON.stringify(input) }),
+
+    exportVersion: (datasetId, versionId, format) =>
+      request<ExportResult>(`/datasets/${datasetId}/versions/${versionId}/export`, {
+        method: "POST",
+        body: JSON.stringify(format ? { format } : {}),
+      }),
+
+    perturb: (datasetId, versionId, input) =>
+      request<PerturbationJob>(`/datasets/${datasetId}/versions/${versionId}/perturb`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    getPerturbationJob: (id) => request<PerturbationJob>(`/perturbation-jobs/${id}`),
+    listPerturbationJobs: (datasetId) =>
+      request<PerturbationJob[]>(`/datasets/${datasetId}/perturbation-jobs`),
+
+    evaluate: (datasetId, versionId, input) =>
+      request<EvaluationRun>(`/datasets/${datasetId}/versions/${versionId}/evaluate`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    getEvaluation: (id) => request<EvaluationRun>(`/evaluations/${id}`),
+    getEvaluationReport: (id) => request<EvaluationReport>(`/evaluations/${id}/report`),
+    evaluationReportUrl: (id) =>
+      request<{ url: string }>(`/evaluations/${id}/report/download`).then((r) => r.url),
+
+    listReviews: (status) =>
+      request<ReviewItem[]>(`/reviews${status ? `?status=${encodeURIComponent(status)}` : ""}`),
+    getReview: (id) => request<ReviewItem>(`/reviews/${id}`),
+    submitReviewDecision: (id, input) =>
+      request<ReviewItem>(`/reviews/${id}/decision`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    listAnnotations: (datasetId, versionId) =>
+      request<Annotation[]>(`/datasets/${datasetId}/versions/${versionId}/annotations`),
+    createAnnotation: (datasetId, versionId, input) =>
+      request<Annotation>(`/datasets/${datasetId}/versions/${versionId}/annotations`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    deleteAnnotation: (id) => request<void>(`/annotations/${id}`, { method: "DELETE" }),
+    submitFeedback: (input) =>
+      request<void>("/feedback", { method: "POST", body: JSON.stringify(input) }),
   };
 }

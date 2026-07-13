@@ -56,6 +56,9 @@ class _FakeDatasetRepository(DatasetRepository):
     async def list_versions(self, tenant_id: UUID, dataset_id: UUID) -> list[Any]:
         return []
 
+    async def get_version(self, tenant_id: UUID, version_id: UUID) -> Any:
+        return None
+
 
 class _FakeProfileRepository(ProfileRepository):
     def __init__(self) -> None:

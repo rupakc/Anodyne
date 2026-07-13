@@ -20,6 +20,8 @@ from anodyne_dataset.ports import (
     SchemaProposer,
 )
 from anodyne_generation.proposer import SchemaProposalError
+from anodyne_hitl.models import ReviewKind, ReviewTask
+from anodyne_hitl.ports import ReviewRepository
 from anodyne_observability.logging import bind_request_context, configure_logging
 from anodyne_tabular.io import UnsupportedSampleFormatError
 from anodyne_tabular.schema import fields_from_profile
@@ -42,6 +44,7 @@ from api_gateway import deps
 from api_gateway.deps import ModelRegistry, RedisLike
 from api_gateway.evaluation_routes import build_router as build_evaluation_router
 from api_gateway.export_routes import router as export_router
+from api_gateway.hitl_routes import build_router as build_hitl_router
 from api_gateway.perturbation_routes import router as perturbation_router
 
 # Sample uploads are capped well below typical request-body limits so a single
@@ -107,6 +110,12 @@ class GenerateRequest(BaseModel):
     # for tabular specs. Defaults to the tenant's first registered model if
     # omitted (mirrors `get_schema_proposer`'s existing default-model choice).
     model_config_id: UUID | None = None
+    # Opt-in human review before generation runs. Default False preserves the
+    # historical behavior: the schema was already reviewed in C0, so the
+    # workflow is started already-approved. When True, the workflow parks at
+    # its schema-approval gate and a pending `ReviewTask` is created for the
+    # reviews queue; approving it resumes the job, rejecting cancels it.
+    require_review: bool = False
 
 
 class CreateFromTemplateRequest(BaseModel):
@@ -558,6 +567,7 @@ def create_app() -> FastAPI:
         repo: DatasetRepository = Depends(deps.get_dataset_repo),
         client: Client = Depends(deps.get_temporal_client),
         registry: ModelRegistry = Depends(deps.get_model_registry),
+        review_repo: ReviewRepository = Depends(deps.get_review_repo),
     ) -> dict[str, object]:
         spec = await repo.get_spec(ctx.tenant_id, dataset_id)
         if spec is None:
@@ -592,16 +602,22 @@ def create_app() -> FastAPI:
             model_config_id = str(cfg.id)
 
         job = GenerationJob(id=uuid4(), tenant_id=ctx.tenant_id, dataset_id=dataset_id)
-        # C0 does schema review *before* generate is called (the UI reviews
-        # the proposed schema, then calls this route), so there is no
-        # separate human step left to gate on here. Start the workflow
-        # already-approved via signal-with-start so it doesn't park at
-        # `awaiting_review` forever waiting for a signal nothing sends. The
-        # workflow's HITL gate itself stays intact for when real pre-generate
-        # review lands.
+        # By default C0 does schema review *before* generate is called (the UI
+        # reviews the proposed schema, then calls this route), so there is no
+        # separate human step left to gate on: the workflow is started
+        # already-approved via signal-with-start (`start_signal`) so it doesn't
+        # park at `awaiting_review` forever waiting for a signal nothing sends.
+        #
+        # When `require_review` is set, we instead want a human sign-off before
+        # generation runs: start the workflow WITHOUT the eager signal (so it
+        # parks at its `wait_condition` HITL gate) and create a pending
+        # `ReviewTask` for the reviews queue. Approving it signals
+        # `approve_schema` (resume); rejecting cancels the workflow -- both via
+        # `apply_review_decision` (`hitl_routes`).
         # Only meaningful for source="sample" (the from-description path always uses
         # TabularSampler regardless); defaults to the permissive copula generator.
         method = str(spec.directives.get("synthesizer", "copula"))
+        start_signal = None if body.require_review else "approve_schema"
         handle = await client.start_workflow(
             GenerationWorkflow.run,
             GenerationInput(
@@ -616,10 +632,22 @@ def create_app() -> FastAPI:
             ),
             id=f"gen-{job.id}",
             task_queue="generation",
-            start_signal="approve_schema",
+            start_signal=start_signal,
         )
         job.workflow_id = handle.id
         await repo.save_job(job)
+        if body.require_review:
+            await review_repo.create(
+                ReviewTask(
+                    id=uuid4(),
+                    tenant_id=ctx.tenant_id,
+                    kind=ReviewKind.SCHEMA_APPROVAL,
+                    target_type="dataset",
+                    target_id=dataset_id,
+                    workflow_id=handle.id,
+                    signal_name="approve_schema",
+                )
+            )
         return job.model_dump(mode="json")
 
     @app.get("/jobs/{job_id}")
@@ -709,5 +737,8 @@ def create_app() -> FastAPI:
 
     # Evaluation Engine (sub-system F) routes live in a focused module.
     app.include_router(build_evaluation_router())
+
+    # Human-in-the-Loop & Annotation (sub-system G) routes live in a focused module.
+    app.include_router(build_hitl_router())
 
     return app

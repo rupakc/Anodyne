@@ -61,6 +61,11 @@ class _FakeDatasetRepository(DatasetRepository, ProfileRepository):
     ) -> list[DatasetVersion]:
         return []
 
+    async def get_version(
+        self, tenant_id: uuid.UUID, version_id: uuid.UUID
+    ) -> DatasetVersion | None:
+        return None
+
 
 class _FakeWorker:
     """Stand-in for `temporalio.worker.Worker`: just records its constructor args."""

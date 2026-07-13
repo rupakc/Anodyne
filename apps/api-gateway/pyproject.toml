@@ -6,6 +6,7 @@ dependencies = ["anodyne-core", "anodyne-tenancy", "anodyne-storage", "anodyne-l
                 "anodyne-observability", "anodyne-dataset", "anodyne-generation",
                 "anodyne-workflows", "anodyne-tabular", "anodyne-image", "anodyne-audio",
                 "anodyne-video", "anodyne-templates", "anodyne-export", "anodyne-evaluation",
+                "anodyne-hitl",
                 "fastapi>=0.115", "uvicorn[standard]>=0.30",
                 "pydantic-settings>=2.4", "pyjwt[crypto]>=2.9", "temporalio>=1.7", "redis>=5",
                 "python-multipart>=0.0.9"]
@@ -28,3 +29,4 @@ anodyne-video = { workspace = true }
 anodyne-templates = { workspace = true }
 anodyne-export = { workspace = true }
 anodyne-evaluation = { workspace = true }
+anodyne-hitl = { workspace = true }

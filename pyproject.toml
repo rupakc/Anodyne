@@ -15,7 +15,7 @@ dev = ["pytest>=8", "pytest-asyncio>=0.24", "mypy>=1.11", "ruff>=0.6",
        "anodyne-dataset", "anodyne-generation", "anodyne-compute", "anodyne-workflows",
        "anodyne-tabular", "anodyne-text", "anodyne-image", "anodyne-audio",
        "anodyne-video", "anodyne-templates", "anodyne-export", "anodyne-perturbation",
-       "anodyne-evaluation", "api-gateway", "generation-worker", "evaluation-worker"]
+       "anodyne-evaluation", "anodyne-hitl", "api-gateway", "generation-worker", "evaluation-worker"]
 
 [tool.uv.sources]
 anodyne-core = { workspace = true }
@@ -36,6 +36,7 @@ anodyne-templates = { workspace = true }
 anodyne-export = { workspace = true }
 anodyne-perturbation = { workspace = true }
 anodyne-evaluation = { workspace = true }
+anodyne-hitl = { workspace = true }
 api-gateway = { workspace = true }
 generation-worker = { workspace = true }
 evaluation-worker = { workspace = true }

@@ -25,7 +25,7 @@ from typing import Any
 
 from anodyne_evaluation.graph_judges.base import GraphJudge, require_graph
 from anodyne_evaluation.models import EvalDimension, ExpertScore
-from anodyne_evaluation.ports import EvaluationContext
+from anodyne_evaluation.ports import EvaluationContext, JudgeNotApplicable
 
 
 def _datatype_ok(value: Any, datatype: str) -> bool:
@@ -104,7 +104,12 @@ class OntologyConsistencyGraphJudge(GraphJudge):
             else:
                 edge_violations += 1
 
-        pass_fraction = passed / checks if checks else 1.0
+        if checks == 0:
+            # An empty graph vacuously "passes" every constraint; scoring it a
+            # perfect 1.0 is misleading in a report. Treat it as unscored so its
+            # weight drops out of the aggregate (matches the other graph judges).
+            raise JudgeNotApplicable("ontology consistency requires a non-empty graph")
+        pass_fraction = passed / checks
         recs: list[str] = []
         if node_type_violations:
             recs.append(f"{node_type_violations} node(s) use a type absent from the ontology.")

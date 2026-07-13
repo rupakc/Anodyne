@@ -25,7 +25,8 @@ from anodyne_compute.sample_tasks import remote_generate_shard_from_generator
 from anodyne_core.models import ModelConfig
 from anodyne_core.ports import LLMProvider, ObjectStore
 from anodyne_dataset.models import DatasetSpec
-from anodyne_graph.generator import LLMGraphGenerator
+from anodyne_graph import engines
+from anodyne_graph.from_sample import graphml_to_dataset
 from anodyne_graph.models import Edge, GraphDataset, Node, compute_metrics
 from anodyne_graph.serialization import from_json_bytes, to_json_bytes
 from anodyne_tabular.builder import build_tabular_generator
@@ -490,6 +491,24 @@ class GraphHandler:
         secret_store = ctx.secret_store or FernetSecretStore(ctx.secret_key.encode())
         return LiteLLMProvider(secret_store)
 
+    async def _load_sample(self, spec: DatasetSpec, store: ObjectStore) -> GraphDataset:
+        """Load + parse the uploaded sample graph for the from-sample engine.
+
+        Read from ``directives["sample_uri"]`` (no new DB table): node-link JSON
+        by default, GraphML when ``directives["sample_format"]`` says so.
+        """
+        uri = spec.directives.get("sample_uri")
+        if not isinstance(uri, str):
+            raise ValueError(
+                "from-sample graph generation requires directives['sample_uri'] "
+                "pointing at an uploaded node-link JSON or GraphML sample"
+            )
+        data = await store.get(uri)
+        fmt = str(spec.directives.get("sample_format", "graph_json")).lower()
+        if fmt in ("graphml", "xml"):
+            return graphml_to_dataset(data)
+        return from_json_bytes(data)
+
     async def generate_shards(
         self,
         ctx: ActivityContext,
@@ -498,13 +517,27 @@ class GraphHandler:
         shards: list[list[int]],
         store: ObjectStore,
     ) -> list[str]:
-        model_config = await self._resolve_model_config(ctx, inp)
-        generator = LLMGraphGenerator(self._provider(ctx), model_config)
+        # Engine selection is centralised in anodyne_graph.engines; only the
+        # LLM-driven engines (default + hybrid) need a provider/model config.
+        needs_llm = engines.needs_llm(spec)
+        model_config = await self._resolve_model_config(ctx, inp) if needs_llm else None
+        provider = self._provider(ctx) if needs_llm else None
+        sample = await self._load_sample(spec, store) if engines.is_from_sample(spec) else None
         keys: list[str] = []
         for i, (start, count) in enumerate(shards):
             # Graph generation is synchronous (drives its own LLM calls via
             # asyncio.run internally), so run it off the event loop.
-            dataset = await asyncio.to_thread(generator.generate, spec, start, count, inp.seed, i)
+            dataset = await asyncio.to_thread(
+                engines.generate_shard,
+                spec,
+                provider,
+                model_config,
+                start,
+                count,
+                inp.seed,
+                i,
+                sample=sample,
+            )
             key = _graph_shard_key(inp, i)
             await store.put(key, to_json_bytes(dataset))
             keys.append(key)

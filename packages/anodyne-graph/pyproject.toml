@@ -2,7 +2,15 @@
 name = "anodyne-graph"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["anodyne-core", "anodyne-dataset", "numpy>=2", "faker>=30"]
+dependencies = [
+    "anodyne-core",
+    "anodyne-dataset",
+    "numpy>=2",
+    "faker>=30",
+    "rdflib>=7.6.0",
+    "pyshacl>=0.40.0",
+    "networkx>=3.6.1",
+]
 
 [build-system]
 requires = ["hatchling"]

@@ -23,6 +23,18 @@ _FORMAT_MEDIA_TYPES: dict[str, tuple[str, str]] = {
     "jsonl": ("application/x-ndjson", "jsonl"),
     # Graph modality: node-link JSON (see anodyne_graph.serialization).
     "graph_json": ("application/json", "json"),
+    # Sub-system GC: graph export/interchange formats (see anodyne_graph.export).
+    "ttl": ("text/turtle", "ttl"),
+    "nt": ("application/n-triples", "nt"),
+    "jsonld": ("application/ld+json", "jsonld"),
+    "rdfxml": ("application/rdf+xml", "rdf"),
+    "owl": ("application/rdf+xml", "owl"),
+    "graphml": ("application/xml", "graphml"),
+    "gexf": ("application/xml", "gexf"),
+    "cypher": ("text/plain", "cypher"),
+    "neo4j-csv": ("application/zip", "zip"),
+    "npz": ("application/octet-stream", "npz"),
+    "graph-parquet": ("application/octet-stream", "parquet"),
 }
 
 _DEFAULT_MEDIA_TYPE = "application/octet-stream"

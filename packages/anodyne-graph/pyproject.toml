@@ -10,6 +10,7 @@ dependencies = [
     "rdflib>=7.6.0",
     "pyshacl>=0.40.0",
     "networkx>=3.6.1",
+    "pyarrow>=17",
 ]
 
 [build-system]

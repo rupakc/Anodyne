@@ -4,7 +4,10 @@ import pytest
 from anodyne_dataset.models import PerturbationFamily, PerturbationSpec
 from anodyne_perturbation import RegistryPerturbator
 
-_FAMILIES = list(PerturbationFamily)
+# The columnar (pa.Table) families only; the GRAPH_* families operate on a
+# `GraphDataset`, not a table, and have their own determinism test in
+# anodyne-graph (test_graph_perturb.py).
+_FAMILIES = [f for f in PerturbationFamily if not f.value.startswith("graph")]
 
 
 def _table(n: int = 200) -> pa.Table:

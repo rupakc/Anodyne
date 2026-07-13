@@ -23,6 +23,9 @@ def test_perturbation_family_values() -> None:
         "outliers",
         "bias",
         "edge_case",
+        "graph_rewire",
+        "graph_dropout",
+        "graph_ontology_violation",
     }
 
 

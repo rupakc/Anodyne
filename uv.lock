@@ -433,6 +433,7 @@ source = { editable = "packages/anodyne-graph" }
 dependencies = [
     { name = "anodyne-core" },
     { name = "anodyne-dataset" },
+    { name = "anodyne-hitl" },
     { name = "faker" },
     { name = "networkx" },
     { name = "numpy" },
@@ -445,6 +446,7 @@ dependencies = [
 requires-dist = [
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "anodyne-hitl", editable = "packages/anodyne-hitl" },
     { name = "faker", specifier = ">=30" },
     { name = "networkx", specifier = ">=3.6.1" },
     { name = "numpy", specifier = ">=2" },
@@ -536,6 +538,7 @@ source = { editable = "packages/anodyne-perturbation" }
 dependencies = [
     { name = "anodyne-core" },
     { name = "anodyne-dataset" },
+    { name = "anodyne-graph" },
     { name = "numpy" },
     { name = "pyarrow" },
     { name = "pydantic" },
@@ -545,6 +548,7 @@ dependencies = [
 requires-dist = [
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "anodyne-graph", editable = "packages/anodyne-graph" },
     { name = "numpy", specifier = ">=2" },
     { name = "pyarrow", specifier = ">=17" },
     { name = "pydantic", specifier = ">=2.8" },

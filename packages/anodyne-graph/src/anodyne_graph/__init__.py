@@ -21,12 +21,22 @@ from anodyne_graph.engines import (
 )
 from anodyne_graph.errors import (
     GraphGenerationError,
+    GraphRAGError,
     OntologyProposalError,
     UnsupportedGraphExportFormatError,
 )
 from anodyne_graph.export import GRAPH_SUPPORTED_FORMATS, GraphExporter
 from anodyne_graph.from_sample import FromSampleGraphGenerator, assert_no_verbatim_subgraph
 from anodyne_graph.generator import LLMGraphGenerator
+from anodyne_graph.graphrag import (
+    GraphQAFixture,
+    GraphQAItem,
+    GraphRAGGenerator,
+    QAPath,
+    fixture_to_jsonl,
+    graphrag_manifest,
+    sample_paths,
+)
 from anodyne_graph.hybrid import HybridGraphGenerator
 from anodyne_graph.models import (
     Edge,
@@ -53,6 +63,10 @@ __all__ = [
     "GraphExporter",
     "GraphGenerationError",
     "GraphOntology",
+    "GraphQAFixture",
+    "GraphQAItem",
+    "GraphRAGError",
+    "GraphRAGGenerator",
     "HybridGraphGenerator",
     "LLMGraphGenerator",
     "LLMOntologyProposer",
@@ -63,16 +77,20 @@ __all__ = [
     "OntologyProposer",
     "ProceduralTopologyGenerator",
     "PropertySpec",
+    "QAPath",
     "ShaclReport",
     "UnsupportedGraphExportFormatError",
     "Violation",
     "assert_no_verbatim_subgraph",
     "build_graph_engine",
     "compute_metrics",
+    "fixture_to_jsonl",
     "from_json_bytes",
     "generate_shard",
+    "graphrag_manifest",
     "inject_violations",
     "is_from_sample",
     "needs_llm",
+    "sample_paths",
     "to_json_bytes",
 ]

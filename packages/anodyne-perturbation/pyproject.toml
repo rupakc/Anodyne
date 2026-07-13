@@ -5,6 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "anodyne-core",
     "anodyne-dataset",
+    "anodyne-graph",
     "pyarrow>=17",
     "numpy>=2",
     "pydantic>=2.8",
@@ -17,3 +18,4 @@ build-backend = "hatchling.build"
 [tool.uv.sources]
 anodyne-core = { workspace = true }
 anodyne-dataset = { workspace = true }
+anodyne-graph = { workspace = true }

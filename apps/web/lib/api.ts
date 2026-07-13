@@ -10,7 +10,7 @@
  * gateway at `http://localhost:8000`.
  */
 
-export type Modality = "tabular" | "text" | "image" | "audio" | "video";
+export type Modality = "tabular" | "text" | "image" | "audio" | "video" | "graph";
 
 export const SEMANTIC_TYPES = [
   "integer",
@@ -90,6 +90,8 @@ export interface CreateDatasetInput {
   /** `POST /datasets` also accepts `source`/`modality`; defaults keep the classic tabular-from-description flow. */
   source?: DatasetSource;
   modality?: Modality;
+  /** Free-form generation directives (topology, ontology, community structure, …). */
+  directives?: Record<string, unknown>;
 }
 
 /**
@@ -118,7 +120,108 @@ export interface UpdateDatasetInput {
   name?: string;
   target_rows?: number;
   fields?: FieldSpec[];
+  /** For the graph modality: edit the proposed ontology (and other directives) before generating. */
+  directives?: Record<string, unknown>;
 }
+
+// ---------------------------------------------------------------------------
+// Graph modality (spec docs/superpowers/specs/2026-07-13-graph-modality-design.md).
+// The canonical model is a typed property graph. A graph dataset is created via
+// `POST /datasets` with `modality:"graph"`; the gateway returns a proposed
+// ontology in `directives.ontology`. Versions serialize a node-link JSON
+// artifact ({ontology, nodes, edges, metrics}) which the explorer fetches.
+// ---------------------------------------------------------------------------
+
+export type GraphSource = "description" | "sample" | "ontology";
+
+/** One datatype property on a node type (or edge type). */
+export interface GraphPropertySpec {
+  name: string;
+  datatype: string;
+}
+
+export interface GraphNodeType {
+  name: string;
+  properties: GraphPropertySpec[];
+  /** Subclass hierarchy (T-Box `subClassOf`), when the ontology defines one. */
+  subclass_of?: string | null;
+}
+
+export interface GraphEdgeType {
+  name: string;
+  source_type: string;
+  target_type: string;
+  properties?: GraphPropertySpec[];
+}
+
+export interface GraphOntology {
+  node_types: GraphNodeType[];
+  edge_types: GraphEdgeType[];
+}
+
+export interface GraphNode {
+  id: string;
+  type: string;
+  properties: Record<string, unknown>;
+}
+
+export interface GraphEdge {
+  id: string;
+  type: string;
+  source: string;
+  target: string;
+  properties?: Record<string, unknown>;
+}
+
+/** Full-graph aggregate stats emitted alongside the artifact. */
+export interface GraphMetrics {
+  node_count?: number;
+  edge_count?: number;
+  nodes_by_type?: Record<string, number>;
+  edges_by_type?: Record<string, number>;
+  density?: number;
+  [key: string]: unknown;
+}
+
+/** The node-link JSON artifact a graph version serializes. */
+export interface GraphArtifact {
+  ontology: GraphOntology;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  metrics?: GraphMetrics;
+}
+
+export interface CreateGraphDatasetInput {
+  name: string;
+  description: string;
+  /** Maps to node count (shared `target_rows`). */
+  target_rows: number;
+  source?: GraphSource;
+  directives?: Record<string, unknown>;
+}
+
+/** Topology models the generator supports (directive `topology.model`). */
+export const GRAPH_TOPOLOGIES = [
+  { value: "barabasi_albert", label: "Scale-free (Barabási–Albert)", hint: "Power-law degree; a few hubs." },
+  { value: "watts_strogatz", label: "Small-world (Watts–Strogatz)", hint: "High clustering, short paths." },
+  { value: "stochastic_block", label: "Communities (Stochastic Block Model)", hint: "Dense within groups." },
+  { value: "ontology_constrained", label: "Ontology-constrained", hint: "Edges only between compatible types." },
+] as const;
+
+export type GraphTopology = (typeof GRAPH_TOPOLOGIES)[number]["value"];
+
+/** Graph export projections offered on a graph version (GC sub-system). */
+export const GRAPH_EXPORT_FORMATS = [
+  { value: "node-link", label: "Node-link JSON" },
+  { value: "turtle", label: "Turtle (RDF)" },
+  { value: "jsonld", label: "JSON-LD" },
+  { value: "graphml", label: "GraphML" },
+  { value: "cypher", label: "Cypher script" },
+  { value: "neo4j-csv", label: "Neo4j admin CSV" },
+  { value: "owl", label: "OWL (ontology)" },
+] as const;
+
+export type GraphExportFormat = (typeof GRAPH_EXPORT_FORMATS)[number]["value"];
 
 export interface GenerateOptions {
   seed?: number;
@@ -472,6 +575,14 @@ export interface ApiClient {
   createAudioDataset(input: CreateAudioDatasetInput): Promise<DatasetSpec>;
   createImageDataset(input: CreateImageDatasetInput): Promise<DatasetSpec>;
 
+  // --- graph modality ---
+  /** Creates a graph dataset (`POST /datasets`, `modality:"graph"`); the gateway proposes an ontology in `directives.ontology`. */
+  createGraphDataset(input: CreateGraphDatasetInput): Promise<DatasetSpec>;
+  /** Fetches + parses a graph version's node-link JSON artifact for in-browser visualization. */
+  fetchGraphArtifact(datasetId: string, versionId: string): Promise<GraphArtifact>;
+  /** Exports a graph version to a graph format via the streaming download; resolves to the filename used. */
+  exportGraphVersion(datasetId: string, versionId: string, format: GraphExportFormat): Promise<string>;
+
   // --- export ---
   /**
    * Creates the export artifact server-side, then streams its bytes through
@@ -646,6 +757,19 @@ export function createApiClient(accessToken: string | undefined, baseUrl: string
       request<DatasetSpec>("/datasets/audio", { method: "POST", body: JSON.stringify(input) }),
     createImageDataset: (input) =>
       request<DatasetSpec>("/datasets/image", { method: "POST", body: JSON.stringify(input) }),
+
+    createGraphDataset: (input) =>
+      request<DatasetSpec>("/datasets", {
+        method: "POST",
+        body: JSON.stringify({ ...input, modality: "graph" }),
+      }),
+    fetchGraphArtifact: (datasetId, versionId) =>
+      request<GraphArtifact>(`/datasets/${datasetId}/versions/${versionId}/download`),
+    exportGraphVersion: (datasetId, versionId, format) =>
+      downloadToFile(
+        `/datasets/${datasetId}/versions/${versionId}/export?format=${encodeURIComponent(format)}`,
+        { method: "POST", fallbackName: `graph-${datasetId}-${versionId}.${format}` },
+      ),
 
     exportVersion: (datasetId, versionId, format) =>
       downloadToFile(`/datasets/${datasetId}/versions/${versionId}/export`, {

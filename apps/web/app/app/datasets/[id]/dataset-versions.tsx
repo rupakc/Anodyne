@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Download, FileDown, GitBranch, Gauge, Tags } from "lucide-react";
+import { Download, FileDown, GitBranch, Gauge, Tags, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ErrorAlert, Loading, SectionHeading } from "@/components/ui/feedback";
 import { FeedbackWidget } from "@/components/feedback-widget";
@@ -11,8 +11,12 @@ import {
   type ApiClient,
   type DatasetSpec,
   type DatasetVersion,
+  type GraphArtifact,
+  type GraphOntology,
   type PerturbationJob,
 } from "@/lib/api";
+import { OntologyView } from "@/components/ontology-view";
+import { GraphExplorer } from "@/components/graph-explorer";
 import { ExportPanel } from "./export-panel";
 import { PerturbPanel } from "./perturb-panel";
 import { EvaluatePanel } from "./evaluate-panel";
@@ -27,7 +31,13 @@ export interface DatasetVersionsProps {
 }
 
 type LoadState = "loading" | "ready" | "error";
-type PanelKey = "export" | "perturb" | "evaluate" | "annotate";
+type PanelKey = "export" | "perturb" | "evaluate" | "annotate" | "visualize";
+
+/** Reads the proposed ontology from a graph dataset's directives, tolerating shape drift. */
+function ontologyOf(spec: DatasetSpec | null): GraphOntology | null {
+  const raw = (spec?.directives as { ontology?: GraphOntology } | undefined)?.ontology;
+  return raw && Array.isArray(raw.node_types) ? raw : null;
+}
 
 /**
  * Dataset detail: name/description, a feedback control, every generated
@@ -101,6 +111,8 @@ export function DatasetVersions({ datasetId, accessToken, api: injectedApi }: Da
   if (state === "error") return <ErrorAlert>{error}</ErrorAlert>;
 
   const fieldNames = dataset?.fields.map((f) => f.name) ?? [];
+  const isGraph = dataset?.modality === "graph";
+  const ontology = isGraph ? ontologyOf(dataset) : null;
 
   return (
     <div className="flex flex-col gap-8">
@@ -109,6 +121,15 @@ export function DatasetVersions({ datasetId, accessToken, api: injectedApi }: Da
       <FeedbackWidget targetType="dataset" targetId={datasetId} accessToken={accessToken} api={injectedApi} />
 
       {downloadError ? <ErrorAlert>{downloadError}</ErrorAlert> : null}
+
+      {isGraph && ontology ? (
+        <div>
+          <h2 className="mb-3 font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight">
+            Ontology
+          </h2>
+          <OntologyView ontology={ontology} />
+        </div>
+      ) : null}
 
       <div>
         <h2 className="mb-3 font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight">
@@ -145,6 +166,11 @@ export function DatasetVersions({ datasetId, accessToken, api: injectedApi }: Da
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
+                    {isGraph ? (
+                      <ActionButton active={open === "visualize"} onClick={() => togglePanel(v.id, "visualize")} icon={Share2}>
+                        Visualize
+                      </ActionButton>
+                    ) : null}
                     <ActionButton active={open === "export"} onClick={() => togglePanel(v.id, "export")} icon={FileDown}>
                       Export
                     </ActionButton>
@@ -161,8 +187,17 @@ export function DatasetVersions({ datasetId, accessToken, api: injectedApi }: Da
 
                   {open ? (
                     <div className="mt-4 rounded-xl border border-border bg-muted/30 p-4">
+                      {open === "visualize" ? (
+                        <VisualizePanel api={api} datasetId={datasetId} versionId={v.id} />
+                      ) : null}
                       {open === "export" ? (
-                        <ExportPanel api={api} datasetId={datasetId} versionId={v.id} rowCount={v.row_count} />
+                        <ExportPanel
+                          api={api}
+                          datasetId={datasetId}
+                          versionId={v.id}
+                          rowCount={v.row_count}
+                          modality={dataset?.modality}
+                        />
                       ) : null}
                       {open === "perturb" ? (
                         <PerturbPanel api={api} datasetId={datasetId} versionId={v.id} fieldNames={fieldNames} />
@@ -214,6 +249,61 @@ export function DatasetVersions({ datasetId, accessToken, api: injectedApi }: Da
       ) : null}
     </div>
   );
+}
+
+/**
+ * Loads a graph version's node-link artifact and hands it to the
+ * {@link GraphExplorer}. The artifact fetch is best-effort — a version that
+ * is not a graph (or a route that has not landed) surfaces a friendly note
+ * rather than an error.
+ */
+function VisualizePanel({
+  api,
+  datasetId,
+  versionId,
+}: {
+  api: ApiClient;
+  datasetId: string;
+  versionId: string;
+}) {
+  const [artifact, setArtifact] = useState<GraphArtifact | null>(null);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api.fetchGraphArtifact(datasetId, versionId).then(
+      (data) => {
+        if (cancelled) return;
+        if (data && Array.isArray(data.nodes)) {
+          setArtifact(data);
+          setState("ready");
+        } else {
+          setMessage("This version does not contain a graph artifact.");
+          setState("error");
+        }
+      },
+      (err) => {
+        if (cancelled) return;
+        setMessage(
+          err instanceof Error ? err.message : "Could not load the graph for this version.",
+        );
+        setState("error");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [api, datasetId, versionId]);
+
+  if (state === "loading") return <Loading label="Loading graph…" />;
+  if (state === "error" || !artifact)
+    return (
+      <p className="text-sm text-muted-foreground">
+        {message ?? "No graph to display."}
+      </p>
+    );
+  return <GraphExplorer graph={artifact} />;
 }
 
 function ActionButton({

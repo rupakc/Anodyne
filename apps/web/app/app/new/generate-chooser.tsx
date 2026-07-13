@@ -1,14 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, Table2, FileText, Image as ImageIcon, AudioLines, Video } from "lucide-react";
+import { ArrowLeft, Table2, FileText, Image as ImageIcon, AudioLines, Video, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SectionHeading } from "@/components/ui/feedback";
 import { Wizard } from "./wizard";
 import { TextWizard } from "./text-wizard";
 import { MediaWizard } from "./media-wizard";
+import { GraphWizard } from "./graph-wizard";
 
-type Flow = "tabular" | "text" | "image" | "audio" | "video";
+type Flow = "tabular" | "text" | "image" | "audio" | "video" | "graph";
 
 const MODALITIES: {
   key: Flow;
@@ -21,6 +22,7 @@ const MODALITIES: {
   { key: "image", label: "Image", blurb: "Labelled synthetic images from a registered image provider.", icon: ImageIcon },
   { key: "audio", label: "Audio", blurb: "Speech/audio clips from a registered audio provider.", icon: AudioLines },
   { key: "video", label: "Video", blurb: "Preview: short clips from a registered video provider.", icon: Video },
+  { key: "graph", label: "Graph / Knowledge Graph", blurb: "Ontology-constrained property graphs: propose an ontology, then generate typed nodes & edges.", icon: Share2 },
 ];
 
 /**
@@ -78,6 +80,7 @@ export function GenerateChooser({ accessToken }: { accessToken?: string }) {
 
       {flow === "tabular" ? <Wizard accessToken={accessToken} /> : null}
       {flow === "text" ? <TextWizard accessToken={accessToken} /> : null}
+      {flow === "graph" ? <GraphWizard accessToken={accessToken} /> : null}
       {flow === "image" || flow === "audio" || flow === "video" ? (
         <MediaWizard modality={flow} accessToken={accessToken} />
       ) : null}

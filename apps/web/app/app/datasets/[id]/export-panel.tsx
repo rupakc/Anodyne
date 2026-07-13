@@ -5,7 +5,14 @@ import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, Select } from "@/components/ui/form";
 import { ErrorAlert, InfoNote } from "@/components/ui/feedback";
-import { EXPORT_FORMATS, type ApiClient, type ExportFormat } from "@/lib/api";
+import {
+  EXPORT_FORMATS,
+  GRAPH_EXPORT_FORMATS,
+  type ApiClient,
+  type ExportFormat,
+  type GraphExportFormat,
+  type Modality,
+} from "@/lib/api";
 
 /** Above this row count the gateway defaults an "auto" export to Parquet. */
 const PARQUET_THRESHOLD = 500_000;
@@ -22,13 +29,19 @@ export function ExportPanel({
   datasetId,
   versionId,
   rowCount,
+  modality,
 }: {
   api: ApiClient;
   datasetId: string;
   versionId: string;
   rowCount: number;
+  /** When "graph", offer the graph interchange formats (Turtle, GraphML, Cypher, …). */
+  modality?: Modality;
 }) {
-  const [format, setFormat] = useState<ExportFormat | "">("");
+  const isGraph = modality === "graph";
+  const [format, setFormat] = useState<ExportFormat | GraphExportFormat | "">(
+    isGraph ? "node-link" : "",
+  );
   const [pending, setPending] = useState(false);
   const [downloadedName, setDownloadedName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +50,9 @@ export function ExportPanel({
     setPending(true);
     setError(null);
     try {
-      const filename = await api.exportVersion(datasetId, versionId, format || undefined);
+      const filename = isGraph
+        ? await api.exportGraphVersion(datasetId, versionId, (format || "node-link") as GraphExportFormat)
+        : await api.exportVersion(datasetId, versionId, (format as ExportFormat) || undefined);
       setDownloadedName(filename);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export failed. Please try again.");
@@ -51,18 +66,28 @@ export function ExportPanel({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="Format" htmlFor={`export-format-${versionId}`} className="w-40">
+        <Field label="Format" htmlFor={`export-format-${versionId}`} className="w-56">
           <Select
             id={`export-format-${versionId}`}
             value={format}
-            onChange={(e) => setFormat(e.target.value as ExportFormat | "")}
+            onChange={(e) => setFormat(e.target.value as ExportFormat | GraphExportFormat | "")}
           >
-            <option value="">Auto ({autoFormat})</option>
-            {EXPORT_FORMATS.map((f) => (
-              <option key={f} value={f}>
-                {f.toUpperCase()}
-              </option>
-            ))}
+            {isGraph ? (
+              GRAPH_EXPORT_FORMATS.map((f) => (
+                <option key={f.value} value={f.value}>
+                  {f.label}
+                </option>
+              ))
+            ) : (
+              <>
+                <option value="">Auto ({autoFormat})</option>
+                {EXPORT_FORMATS.map((f) => (
+                  <option key={f} value={f}>
+                    {f.toUpperCase()}
+                  </option>
+                ))}
+              </>
+            )}
           </Select>
         </Field>
         <Button type="button" onClick={handleExport} disabled={pending}>
@@ -70,7 +95,12 @@ export function ExportPanel({
         </Button>
       </div>
 
-      {format === "" ? (
+      {isGraph ? (
+        <InfoNote>
+          Graph exports project the property graph into RDF (Turtle/JSON-LD/OWL) or property-graph
+          formats (GraphML, Cypher, Neo4j CSV). Large graphs stream chunked.
+        </InfoNote>
+      ) : format === "" ? (
         <InfoNote>
           Auto picks Parquet for versions over {PARQUET_THRESHOLD.toLocaleString()} rows, otherwise CSV.
           This version has {rowCount.toLocaleString()} rows → <strong>{autoFormat.toUpperCase()}</strong>.

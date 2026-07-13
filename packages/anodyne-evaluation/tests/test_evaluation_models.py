@@ -4,6 +4,8 @@ from uuid import uuid4
 
 from anodyne_evaluation.models import (
     DEFAULT_WEIGHTS,
+    GRAPH_WEIGHTS,
+    TABULAR_WEIGHTS,
     EvalDimension,
     EvaluationReport,
     EvaluationRun,
@@ -13,7 +15,11 @@ from anodyne_evaluation.models import (
 
 
 def test_default_weights_sum_to_one() -> None:
-    assert abs(sum(DEFAULT_WEIGHTS.values()) - 1.0) < 1e-9
+    # Each modality group sums to 1.0 on its own; the combined map covers every
+    # dimension exactly once (a run is single-modality, so the aggregator only
+    # ever renormalizes within one group).
+    assert abs(sum(TABULAR_WEIGHTS.values()) - 1.0) < 1e-9
+    assert abs(sum(GRAPH_WEIGHTS.values()) - 1.0) < 1e-9
     assert set(DEFAULT_WEIGHTS) == set(EvalDimension)
 
 

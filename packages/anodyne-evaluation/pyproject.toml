@@ -12,12 +12,16 @@ dependencies = [
     "anodyne-storage",
     "anodyne-tabular",
     "anodyne-llm",
+    # anodyne-graph supplies the GraphDataset artifact the graph judges (GD) score.
+    "anodyne-graph",
     "numpy>=2",
     # Match anodyne-tabular: pandas 3.0 breaks rdt/copulas/sdv in the shared workspace resolution.
     "pandas>=2.2,<3",
     "pyarrow>=17",
     "scipy>=1.13",
     "scikit-learn>=1.5",
+    # networkx (BSD) drives the graph structural/connectivity/utility/privacy judges.
+    "networkx>=3.2",
 ]
 
 [build-system]
@@ -30,3 +34,4 @@ anodyne-dataset = { workspace = true }
 anodyne-storage = { workspace = true }
 anodyne-tabular = { workspace = true }
 anodyne-llm = { workspace = true }
+anodyne-graph = { workspace = true }

@@ -18,7 +18,13 @@ from pydantic import BaseModel, Field
 
 
 class EvalDimension(StrEnum):
-    """The mixture-of-experts dimensions (one expert judge each)."""
+    """The mixture-of-experts dimensions (one expert judge each).
+
+    The first block is the tabular/text mixture; the ``GRAPH_*`` block is the
+    graph modality's mixture (sub-system GD). A single run only ever produces
+    scores for one modality's dimensions, so the aggregator's renormalization
+    keeps the 360-degree score well-defined either way.
+    """
 
     FIDELITY = "fidelity"
     DIVERSITY = "diversity"
@@ -26,12 +32,20 @@ class EvalDimension(StrEnum):
     UTILITY = "utility"
     BIAS = "bias"
     QUALITATIVE = "qualitative"
+    # Graph modality (GD).
+    GRAPH_STRUCTURE = "graph_structure"
+    GRAPH_ONTOLOGY = "graph_ontology"
+    GRAPH_SEMANTIC = "graph_semantic"
+    GRAPH_CONNECTIVITY = "graph_connectivity"
+    GRAPH_UTILITY = "graph_utility"
+    GRAPH_PRIVACY = "graph_privacy"
 
 
-# Default 360-degree weights (sum == 1.0). Overridable per run via
-# `EvaluationConfig.weights`; the aggregator renormalizes over whichever
-# dimensions actually produced a score.
-DEFAULT_WEIGHTS: dict[str, float] = {
+# Default 360-degree weights, grouped by modality. Each modality's group sums to
+# 1.0 on its own; the aggregator renormalizes over whichever dimensions actually
+# produced a score, so mixing never happens in practice (a run is single-modality).
+# Overridable per run via `EvaluationConfig.weights`.
+TABULAR_WEIGHTS: dict[str, float] = {
     EvalDimension.FIDELITY: 0.25,
     EvalDimension.PRIVACY: 0.20,
     EvalDimension.UTILITY: 0.20,
@@ -39,6 +53,15 @@ DEFAULT_WEIGHTS: dict[str, float] = {
     EvalDimension.QUALITATIVE: 0.10,
     EvalDimension.BIAS: 0.10,
 }
+GRAPH_WEIGHTS: dict[str, float] = {
+    EvalDimension.GRAPH_STRUCTURE: 0.25,
+    EvalDimension.GRAPH_ONTOLOGY: 0.20,
+    EvalDimension.GRAPH_PRIVACY: 0.15,
+    EvalDimension.GRAPH_CONNECTIVITY: 0.15,
+    EvalDimension.GRAPH_UTILITY: 0.15,
+    EvalDimension.GRAPH_SEMANTIC: 0.10,
+}
+DEFAULT_WEIGHTS: dict[str, float] = {**TABULAR_WEIGHTS, **GRAPH_WEIGHTS}
 
 
 class ExpertScore(BaseModel):

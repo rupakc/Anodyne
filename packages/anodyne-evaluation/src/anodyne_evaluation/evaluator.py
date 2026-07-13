@@ -14,8 +14,17 @@ from uuid import UUID
 
 from anodyne_core.models import ModelConfig
 from anodyne_core.ports import LLMProvider
+from anodyne_dataset.models import Modality
 
 from anodyne_evaluation.aggregator import WeightedAggregator
+from anodyne_evaluation.graph_judges import (
+    ConnectivityCoverageGraphJudge,
+    GraphPrivacyJudge,
+    GraphUtilityJudge,
+    OntologyConsistencyGraphJudge,
+    SemanticPlausibilityGraphJudge,
+    StructuralFidelityGraphJudge,
+)
 from anodyne_evaluation.judges import (
     BiasJudge,
     DiversityJudge,
@@ -60,6 +69,37 @@ def default_judges(
     if provider is not None and model_config is not None:
         judges.append(QualitativeJudge(provider, model_config))
     return judges
+
+
+def graph_judges(
+    provider: LLMProvider | None = None, model_config: ModelConfig | None = None
+) -> list[Judge]:
+    """The graph mixture of experts (sub-system GD). The LLM-backed semantic
+    expert is included only when an `LLMProvider` + `ModelConfig` are available."""
+    judges: list[Judge] = [
+        StructuralFidelityGraphJudge(),
+        OntologyConsistencyGraphJudge(),
+        ConnectivityCoverageGraphJudge(),
+        GraphUtilityJudge(),
+        GraphPrivacyJudge(),
+    ]
+    if provider is not None and model_config is not None:
+        judges.append(SemanticPlausibilityGraphJudge(provider, model_config))
+    return judges
+
+
+def judges_for_modality(
+    modality: Modality,
+    provider: LLMProvider | None = None,
+    model_config: ModelConfig | None = None,
+) -> list[Judge]:
+    """Select the expert mixture for `modality`: the graph judges for
+    `Modality.GRAPH`, else the tabular/text judges. This is the dispatch seam the
+    evaluation activity uses so a graph run scores graph dimensions and every
+    other modality keeps its existing experts."""
+    if modality == Modality.GRAPH:
+        return graph_judges(provider, model_config)
+    return default_judges(provider, model_config)
 
 
 class MoEEvaluator:

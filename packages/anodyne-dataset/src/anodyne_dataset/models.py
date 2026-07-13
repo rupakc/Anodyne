@@ -84,13 +84,22 @@ class DatasetVersion(BaseModel):
 
 
 class PerturbationFamily(StrEnum):
-    """The five controlled-corruption families (architecture requirements 3 & 4)."""
+    """The controlled-corruption families (architecture requirements 3 & 4).
+
+    The first five are the tabular/text families; the trailing `GRAPH_*` families
+    (Track GH) perturb the graph modality's node-link artifact and are dispatched
+    to the graph perturbator rather than the columnar handlers.
+    """
 
     NOISE = "noise"
     DRIFT = "drift"
     OUTLIERS = "outliers"
     BIAS = "bias"
     EDGE_CASE = "edge_case"
+    # Graph modality (Track GH): structural + semantic corruption of a graph.
+    GRAPH_REWIRE = "graph_rewire"
+    GRAPH_DROPOUT = "graph_dropout"
+    GRAPH_ONTOLOGY_VIOLATION = "graph_ontology_violation"
 
 
 class PerturbationSpec(BaseModel):

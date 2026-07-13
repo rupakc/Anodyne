@@ -20,7 +20,13 @@ from typing import Any, Protocol
 import pyarrow as pa  # type: ignore[import-untyped]
 import pyarrow.parquet as pq  # type: ignore[import-untyped]
 from anodyne_core.ports import ObjectStore
-from anodyne_dataset.models import DatasetVersion, JobStatus, PerturbationFamily, PerturbationSpec
+from anodyne_dataset.models import (
+    DatasetVersion,
+    JobStatus,
+    Modality,
+    PerturbationFamily,
+    PerturbationSpec,
+)
 from anodyne_dataset.ports import DatasetRepository, PerturbationRepository, Perturbator
 from anodyne_storage.objectstore import S3ObjectStore
 from temporalio import activity
@@ -87,6 +93,15 @@ def _spec_from(inp: PerturbationInput) -> PerturbationSpec:
     )
 
 
+_GRAPH_FORMAT = "graph_json"
+
+
+def _is_graph(fmt: str, modality: str) -> bool:
+    """A version is a graph artifact when its `format` is node-link ``graph_json``
+    (or the dataset modality is GRAPH) -- the signal to bypass the pa.Table path."""
+    return fmt == _GRAPH_FORMAT or str(modality) == Modality.GRAPH
+
+
 def _read_table(data: bytes, fmt: str) -> pa.Table:
     if fmt == "parquet":
         return pq.read_table(io.BytesIO(data))
@@ -135,8 +150,23 @@ async def apply_perturbation(inp: PerturbationInput) -> list[Any]:
     store = _object_store(inp)
     parent = await _parent_version(inp)
     data = await store.get(parent.artifact_uri)
-    table = _read_table(data, parent.format)
     spec = _spec_from(inp)
+
+    # Graph-aware branch: a `graph_json` artifact is node-link JSON, not
+    # columnar, so it is loaded into a `GraphDataset`, perturbed by the graph
+    # perturbator, and re-serialized -- never forced through a `pyarrow.Table`
+    # (mirrors how the evaluation activity added a Modality.GRAPH branch).
+    if _is_graph(parent.format, inp.modality):
+        from anodyne_graph.serialization import from_json_bytes, to_json_bytes
+        from anodyne_perturbation.registry import get_graph_perturbation_handler
+
+        dataset = from_json_bytes(data)
+        out_graph = get_graph_perturbation_handler(inp.modality).perturb(spec, dataset, inp.seed)
+        key = _artifact_key(inp, "json")
+        await store.put(key, to_json_bytes(out_graph))
+        return [key, len(out_graph.nodes)]
+
+    table = _read_table(data, parent.format)
     out = ctx.perturbator.perturb(spec, table, inp.modality, inp.seed)
     payload, ext = _write_table(out, parent.format)
     key = _artifact_key(inp, ext)

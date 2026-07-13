@@ -70,13 +70,30 @@ def _spectrum(g: nx.Graph) -> np.ndarray:
     return np.sort(np.asarray(nx.normalized_laplacian_spectrum(g), dtype=float))
 
 
+def _resample(spectrum: np.ndarray, length: int) -> np.ndarray:
+    # Linearly resample a sorted eigenvalue spectrum to `length` points. This
+    # replaces zero-padding the shorter spectrum: padding let a node-count gap
+    # dominate the L2 delta (two structurally-similar graphs of different sizes
+    # scored as very distant). Resampling compares spectral *shape* at a common
+    # resolution, so size differences no longer inflate the distance.
+    if len(spectrum) == length:
+        return spectrum
+    if len(spectrum) == 0:
+        return np.zeros(length)
+    if len(spectrum) == 1:
+        return np.full(length, spectrum[0])
+    xp = np.linspace(0.0, 1.0, len(spectrum))
+    x = np.linspace(0.0, 1.0, length)
+    return np.asarray(np.interp(x, xp, spectrum), dtype=float)
+
+
 def _spectral_distance(a: nx.Graph, b: nx.Graph) -> float:
     ea, eb = _spectrum(a), _spectrum(b)
     n = max(len(ea), len(eb))
     if n == 0:
         return 0.0
-    ea = np.pad(ea, (0, n - len(ea)))
-    eb = np.pad(eb, (0, n - len(eb)))
+    ea = _resample(ea, n)
+    eb = _resample(eb, n)
     # normalized-Laplacian eigenvalues live in [0, 2]; normalize the L2 delta by
     # sqrt(n) (per-eigenvalue RMS) and by 2 (the range) into [0, 1].
     return clamp01(float(np.linalg.norm(ea - eb)) / (np.sqrt(n) * 2.0))

@@ -127,7 +127,16 @@ def _local(value: str) -> str:
     return cleaned or "_"
 
 
-def _literal(value: Any) -> Literal:
+def _literal(value: Any, declared: str | None = None) -> Literal:
+    # When the ontology declares the property `datetime`, type the A-Box literal
+    # `xsd:dateTime` so it agrees with the OWL T-Box `rdfs:range` (which
+    # `ontology_to_owl` emits as `xsd:dateTime`). datetime values arrive as ISO
+    # strings (JSON has no datetime type), so without this they'd serialize as
+    # plain string literals and disagree with the declared range. Other datatypes
+    # already agree: int->xsd:integer, float->xsd:double, bool->xsd:boolean, and
+    # a plain literal is xsd:string per RDF 1.1.
+    if declared == "datetime" and isinstance(value, str):
+        return Literal(value, datatype=XSD.dateTime)
     if isinstance(value, bool):
         return Literal(value, datatype=XSD.boolean)
     if isinstance(value, int):
@@ -142,11 +151,21 @@ def dataset_to_rdf(dataset: GraphDataset) -> Graph:
     g = Graph()
     g.bind("ex", EX)
     g.bind("onto", ONTO)
+    # Declared property datatypes, per type, so A-Box literals can be typed to
+    # match the OWL T-Box range (see `_literal`).
+    onto = dataset.ontology
+    node_prop_dt = {
+        nt.name: {p.name: p.datatype for p in nt.properties} for nt in onto.node_types
+    }
+    edge_prop_dt = {
+        et.name: {p.name: p.datatype for p in et.properties} for et in onto.edge_types
+    }
     for node in sorted(dataset.nodes, key=lambda n: n.id):
         subj = EX[_local(node.id)]
         g.add((subj, RDF.type, ONTO[_local(node.type)]))
+        declared = node_prop_dt.get(node.type, {})
         for key, value in sorted(node.properties.items()):
-            g.add((subj, ONTO[_local(key)], _literal(value)))
+            g.add((subj, ONTO[_local(key)], _literal(value, declared.get(key))))
     for edge in sorted(dataset.edges, key=lambda e: e.id):
         s = EX[_local(edge.source)]
         o = EX[_local(edge.target)]
@@ -160,8 +179,9 @@ def dataset_to_rdf(dataset: GraphDataset) -> Graph:
             g.add((stmt, RDF.subject, s))
             g.add((stmt, RDF.predicate, p))
             g.add((stmt, RDF.object, o))
+            edge_declared = edge_prop_dt.get(edge.type, {})
             for key, value in sorted(edge.properties.items()):
-                g.add((stmt, ONTO[_local(key)], _literal(value)))
+                g.add((stmt, ONTO[_local(key)], _literal(value, edge_declared.get(key))))
     return g
 
 
@@ -267,6 +287,12 @@ def _cypher_value(value: Any) -> str:
     if isinstance(value, (int, float)):
         return repr(value)
     escaped = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    # Escape control characters too: a raw newline/tab/CR inside a Cypher string
+    # literal is rejected by some drivers. Backslashes are already doubled above,
+    # so these produce two-char escape sequences; any remaining C0 char becomes
+    # a `\uXXXX` escape.
+    escaped = escaped.replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+    escaped = "".join(c if ord(c) >= 0x20 else f"\\u{ord(c):04x}" for c in escaped)
     return f'"{escaped}"'
 
 

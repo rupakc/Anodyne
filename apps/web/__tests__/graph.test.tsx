@@ -100,6 +100,18 @@ describe("graph wizard", () => {
     expect(within(edgeTypes).getByText("associated_with")).toBeInTheDocument();
   });
 
+  it("caps the requested node count at the demo maximum", async () => {
+    const user = userEvent.setup();
+    const api = baseMockApi();
+
+    render(<GraphWizard api={api} />);
+    const nodeCount = screen.getByLabelText(/node count/i) as HTMLInputElement;
+    await user.clear(nodeCount);
+    await user.type(nodeCount, "999999");
+    // Clamped to the 10,000-node demo ceiling.
+    expect(Number(nodeCount.value)).toBeLessThanOrEqual(10_000);
+  });
+
   it("proceeds to confirm and starts generation, navigating to the job", async () => {
     const user = userEvent.setup();
     const api = baseMockApi({

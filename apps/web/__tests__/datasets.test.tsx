@@ -152,6 +152,63 @@ describe("dataset versions + download", () => {
     );
   });
 
+  it("refuses to fetch a huge graph version and points at the download instead", async () => {
+    const user = userEvent.setup();
+    const graphSpec: DatasetSpec = { ...DATASETS[0], modality: "graph", directives: {} };
+    const hugeVersion: DatasetVersion = {
+      ...VERSIONS[0],
+      id: "graph-huge",
+      format: "graph_json",
+      row_count: 250_000, // far above the in-browser element cap
+    };
+    const fetchGraphArtifact = vi.fn();
+    const api = makeMockApi({
+      getDataset: vi.fn().mockResolvedValue(graphSpec),
+      listVersions: vi.fn().mockResolvedValue([hugeVersion]),
+      fetchGraphArtifact,
+    });
+
+    render(<DatasetVersions datasetId="dataset-1" api={api} />);
+    const list = await screen.findByRole("list", { name: /dataset versions/i });
+    const row = within(list).getByText(/GRAPH_JSON/).closest("li")!;
+    await user.click(within(row).getByRole("button", { name: /visualize/i }));
+
+    expect(await screen.findByText(/too large to visualize in-browser/i)).toBeInTheDocument();
+    // The whole-artifact fetch/parse (the OOM path) is never triggered.
+    expect(fetchGraphArtifact).not.toHaveBeenCalled();
+  });
+
+  it("fetches and renders a small graph version's artifact", async () => {
+    const user = userEvent.setup();
+    const graphSpec: DatasetSpec = { ...DATASETS[0], modality: "graph", directives: {} };
+    const smallVersion: DatasetVersion = {
+      ...VERSIONS[0],
+      id: "graph-small",
+      format: "graph_json",
+      row_count: 5,
+    };
+    const fetchGraphArtifact = vi.fn().mockResolvedValue({
+      ontology: { node_types: [{ name: "Gene", properties: [] }], edge_types: [] },
+      nodes: [{ id: "n1", type: "Gene", properties: {} }],
+      edges: [],
+      metrics: { node_count: 1, edge_count: 0 },
+    });
+    const api = makeMockApi({
+      getDataset: vi.fn().mockResolvedValue(graphSpec),
+      listVersions: vi.fn().mockResolvedValue([smallVersion]),
+      fetchGraphArtifact,
+    });
+
+    render(<DatasetVersions datasetId="dataset-1" api={api} />);
+    const list = await screen.findByRole("list", { name: /dataset versions/i });
+    const row = within(list).getByText(/GRAPH_JSON/).closest("li")!;
+    await user.click(within(row).getByRole("button", { name: /visualize/i }));
+
+    await waitFor(() =>
+      expect(fetchGraphArtifact).toHaveBeenCalledWith("dataset-1", "graph-small"),
+    );
+  });
+
   it("surfaces an inline error if the streamed download fails", async () => {
     const user = userEvent.setup();
     const api = makeMockApi({

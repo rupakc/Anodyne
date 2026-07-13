@@ -144,7 +144,9 @@ class LLMGraphGenerator:
         ontology = self._ontology(spec)
         rng = np.random.default_rng([seed, shard_index])
         fake = Faker()
-        Faker.seed(seed * 1_000_003 + shard_index * 7919 + start_index)
+        # Per-instance seed (not global `Faker.seed`) so concurrent shards each
+        # get an independent, deterministic Faker without racing on shared state.
+        fake.seed_instance(seed * 1_000_003 + shard_index * 7919 + start_index)
 
         request = LLMRequest(
             model_config_id=self._cfg.id,

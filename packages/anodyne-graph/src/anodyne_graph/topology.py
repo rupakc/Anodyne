@@ -129,6 +129,7 @@ def _build_lfr(
     attempt succeeds -- and thus the resulting graph -- is reproducible.
     """
     import multiprocessing as mp
+    import queue
 
     tau1 = float(directives.get("tau1", 3.0))
     tau2 = float(directives.get("tau2", 1.5))
@@ -144,14 +145,25 @@ def _build_lfr(
         q: Any = ctx.Queue()
         proc = ctx.Process(target=_lfr_worker, args=(q, n, tau1, tau2, mu, avg_deg, min_comm, seed))
         proc.start()
-        proc.join(timeout_s)
-        if proc.is_alive():  # pragma: no cover - the hang path (RNG-dependent)
+        # Read the result FIRST: a large valid payload can exceed the OS pipe
+        # buffer, blocking the child on `q.put` until the parent drains it. If
+        # we `join` before `get`, that child would look hung and we'd falsely
+        # declare non-convergence. `q.get` unblocks the child; `Empty` after
+        # `timeout_s` is the real hang.
+        try:
+            tag, *rest = q.get(timeout=timeout_s)
+        except queue.Empty:  # pragma: no cover - the hang path (RNG-dependent)
             proc.terminate()
             proc.join()
+            q.close()
+            q.join_thread()
             continue
-        if q.empty():  # pragma: no cover - defensive
-            continue
-        tag, *rest = q.get()
+        proc.join(timeout_s)
+        if proc.is_alive():  # pragma: no cover - defensive: child not exiting post-put
+            proc.terminate()
+            proc.join()
+        q.close()
+        q.join_thread()
         if tag != "ok":
             continue
         edges, comm_tuples = rest
@@ -257,7 +269,9 @@ class ProceduralTopologyGenerator:
         ontology = ontology_from_spec(dict(spec.directives))
         rng = np.random.default_rng([seed, shard_index])
         fake = Faker()
-        Faker.seed(seed * 1_000_003 + shard_index * 7919 + start_index)
+        # Per-instance seed (not global `Faker.seed`) so concurrent shards each
+        # get an independent, deterministic Faker without racing on shared state.
+        fake.seed_instance(seed * 1_000_003 + shard_index * 7919 + start_index)
 
         name = str(spec.directives.get("topology", "barabasi_albert"))
         n = max(1, count)
@@ -275,7 +289,10 @@ class ProceduralTopologyGenerator:
         nodes: list[Node] = []
         for i in range(n):
             ntype = type_of_index[i]
-            node_id = f"{ntype}:{i}"
+            # Shard-global id (incorporate `start_index`) so multi-shard
+            # assembly never dedups distinct nodes; identical to `{ntype}:{i}`
+            # for the single-shard case (start_index == 0).
+            node_id = f"{ntype}:{start_index + i}"
             node_ids.append(node_id)
             nodes.append(
                 Node(

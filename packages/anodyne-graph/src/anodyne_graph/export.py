@@ -34,10 +34,13 @@ before being handed to networkx -- documented data-fidelity trade-off: types
 are recoverable by the consumer via the ontology's declared `datatype`, not by
 the GraphML/GEXF attribute type.
 
-**Cypher.** One `CREATE` per node (label = node type, `id` + properties as
-map literal); one `MATCH ... CREATE` per edge (matched by `id` property on
-both endpoints -- no label assumed, so a dangling/edge-type ontology mismatch
-never breaks the match). Deterministic: nodes/edges are sorted by `id`.
+**Cypher.** One `CREATE` per node (label = node type, a synthetic `_nid` key +
+properties as map literal); one `MATCH ... CREATE` per edge (endpoints matched
+on `_nid` on both sides -- no label assumed, so a dangling/edge-type ontology
+mismatch never breaks the match). `_nid` is a dedicated identifier independent
+of user properties, so an ontology with a property named `id` still matches
+(a user `id` would otherwise shadow the lookup key and yield zero edges).
+Deterministic: nodes/edges are sorted by `id`.
 
 **Neo4j admin-import CSVs.** One `nodes_<Type>.csv` (header
 `id:ID,:LABEL,<prop...>`) and one `edges_<Type>.csv` (header
@@ -223,17 +226,23 @@ def _edge_directed(dataset: GraphDataset, edge: Edge) -> bool:
 
 
 def dataset_to_networkx(dataset: GraphDataset) -> nx.MultiDiGraph[str]:
+    # Attributes are assigned via `.update()` rather than splatted as kwargs into
+    # `add_node`/`add_edge`: a property literally named `type`, `key`,
+    # `directed`, `u_of_edge`, ... would otherwise collide with a networkx
+    # reserved keyword and raise `TypeError`. Structural attrs (`type`,
+    # `directed`) are written last so they win over any same-named property.
     g: nx.MultiDiGraph[str] = nx.MultiDiGraph()
     for node in dataset.nodes:
-        g.add_node(node.id, type=node.type, **_stringify_props(node.properties))
+        g.add_node(node.id)
+        g.nodes[node.id].update({**_stringify_props(node.properties), "type": node.type})
     for edge in dataset.edges:
-        g.add_edge(
-            edge.source,
-            edge.target,
-            key=edge.id,
-            type=edge.type,
-            directed=str(_edge_directed(dataset, edge)),
-            **_stringify_props(edge.properties),
+        key = g.add_edge(edge.source, edge.target, key=edge.id)
+        g.edges[edge.source, edge.target, key].update(
+            {
+                **_stringify_props(edge.properties),
+                "type": edge.type,
+                "directed": str(_edge_directed(dataset, edge)),
+            }
         )
     return g
 
@@ -267,17 +276,24 @@ def _cypher_props(props: dict[str, Any]) -> str:
 
 
 def dataset_to_cypher(dataset: GraphDataset) -> bytes:
-    """A Cypher script: one `CREATE` per node, one `MATCH ... CREATE` per edge
-    (matched by `id` property, no label assumed -- see module docstring)."""
+    """A Cypher script: one `CREATE` per node, one `MATCH ... CREATE` per edge.
+
+    Endpoints are matched on a dedicated synthetic key `_nid` (the graph's own
+    `node.id`), NOT on a user property named `id`: a real `id` property would
+    otherwise clobber the lookup key so every edge `MATCH` finds nothing and
+    zero relationships are created. `_nid` is written last so a user property
+    literally named `_nid` cannot override it, and any user `id`/`_eid`
+    properties are preserved verbatim.
+    """
     lines: list[str] = []
     for node in sorted(dataset.nodes, key=lambda n: n.id):
-        props = _cypher_props({"id": node.id, **node.properties})
+        props = _cypher_props({**node.properties, "_nid": node.id})
         lines.append(f"CREATE (:{_local(node.type)} {props});")
     for edge in sorted(dataset.edges, key=lambda e: e.id):
-        rel_props = _cypher_props({"id": edge.id, **edge.properties})
+        rel_props = _cypher_props({**edge.properties, "_eid": edge.id})
         lines.append(
-            f"MATCH (a {{id: {_cypher_value(edge.source)}}}), "
-            f"(b {{id: {_cypher_value(edge.target)}}}) "
+            f"MATCH (a {{_nid: {_cypher_value(edge.source)}}}), "
+            f"(b {{_nid: {_cypher_value(edge.target)}}}) "
             f"CREATE (a)-[:{_local(edge.type)} {rel_props}]->(b);"
         )
     return ("\n".join(lines) + "\n").encode("utf-8")

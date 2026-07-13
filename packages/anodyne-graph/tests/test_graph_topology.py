@@ -132,6 +132,17 @@ def test_same_seed_is_deterministic() -> None:
     assert to_json_bytes(a) == to_json_bytes(b)
 
 
+def test_shards_produce_disjoint_node_ids() -> None:
+    gen = ProceduralTopologyGenerator()
+    shard0 = gen.generate(_spec("barabasi_albert", _SELF, m=2), 0, 30, seed=9, shard_index=0)
+    shard1 = gen.generate(_spec("barabasi_albert", _SELF, m=2), 30, 30, seed=9, shard_index=1)
+    ids0 = {n.id for n in shard0.nodes}
+    ids1 = {n.id for n in shard1.nodes}
+    assert ids0.isdisjoint(ids1)
+    # Single-shard output (start_index == 0) is unchanged: ids start at 0.
+    assert "Person:0" in ids0
+
+
 def test_unknown_topology_raises() -> None:
     with pytest.raises(GraphGenerationError):
         ProceduralTopologyGenerator().generate(_spec("nonsense", _SELF), 0, 10, seed=1)

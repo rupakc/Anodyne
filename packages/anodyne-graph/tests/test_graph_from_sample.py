@@ -104,6 +104,80 @@ def test_ages_within_sample_range() -> None:
             assert 20 <= n.properties["age"] <= 43
 
 
+_PRIVACY_ONTOLOGY = GraphOntology(
+    node_types=[
+        NodeType(
+            name="Employee",
+            properties=[
+                # High-cardinality free text: must be synthesized, never copied.
+                PropertySpec(name="notes", datatype="string"),
+                # Sensitive numeric: must be sampled, never a verbatim copy.
+                PropertySpec(name="salary", datatype="float"),
+                # Low-cardinality short categorical: resampling labels is allowed.
+                PropertySpec(name="department", datatype="string"),
+            ],
+        ),
+    ],
+    edge_types=[EdgeType(name="KNOWS", source_type="Employee", target_type="Employee")],
+)
+
+
+def _privacy_sample() -> GraphDataset:
+    nodes: list[Node] = []
+    edges: list[Edge] = []
+    depts = ["Sales", "Eng", "Legal"]
+    for i in range(30):
+        eid = f"Employee:{i}"
+        nodes.append(
+            Node(
+                id=eid,
+                type="Employee",
+                properties={
+                    # Every note is a distinct, long, unique free-text string.
+                    "notes": f"Confidential performance memo #{i} — do not share {i * 7919}",
+                    "salary": 50_000.0 + i * 1_234.5,
+                    "department": depts[i % len(depts)],
+                },
+            )
+        )
+        if i:
+            edges.append(
+                Edge(id=f"KNOWS:{i}", type="KNOWS", source=eid, target=f"Employee:{i - 1}")
+            )
+    return GraphDataset(ontology=_PRIVACY_ONTOLOGY, nodes=nodes, edges=edges)
+
+
+def test_freetext_synthesized_not_copied_and_numeric_not_verbatim() -> None:
+    sample = _privacy_sample()
+    ds = FromSampleGraphGenerator(sample).generate(_spec(), 0, 40, seed=3)
+
+    sample_notes = {str(n.properties["notes"]) for n in sample.nodes}
+    synth_notes = {str(n.properties["notes"]) for n in ds.nodes}
+    # High-cardinality free text is synthesized -> disjoint from the sample.
+    assert synth_notes.isdisjoint(sample_notes)
+
+    sample_salaries = {float(n.properties["salary"]) for n in sample.nodes}
+    synth_salaries = [float(n.properties["salary"]) for n in ds.nodes]
+    lo, hi = min(sample_salaries), max(sample_salaries)
+    # Numeric values are sampled from a fitted range: in-range but not verbatim.
+    assert all(lo <= s <= hi for s in synth_salaries)
+    assert any(s not in sample_salaries for s in synth_salaries)
+
+    # Low-cardinality department labels may recur (statistical matching, by design).
+    synth_depts = {str(n.properties["department"]) for n in ds.nodes}
+    assert synth_depts <= {"Sales", "Eng", "Legal"}
+
+
+def test_shards_produce_disjoint_node_ids() -> None:
+    sample = _sample()
+    gen = FromSampleGraphGenerator(sample)
+    shard0 = gen.generate(_spec(), 0, 20, seed=1, shard_index=0)
+    shard1 = gen.generate(_spec(), 20, 20, seed=1, shard_index=1)
+    ids0 = {n.id for n in shard0.nodes}
+    ids1 = {n.id for n in shard1.nodes}
+    assert ids0.isdisjoint(ids1)
+
+
 def test_deterministic_same_seed() -> None:
     sample = _sample()
     a = FromSampleGraphGenerator(sample).generate(_spec(), 0, 40, seed=5)

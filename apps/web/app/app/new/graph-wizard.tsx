@@ -20,6 +20,13 @@ import { StepIndicator, type WizardStepMeta } from "./step-indicator";
 
 type Step = "describe" | "ontology" | "confirm";
 
+/**
+ * Demo cap on the requested node count. In-browser generation preview + the
+ * client-side explorer degrade past this size, so the wizard clamps the request
+ * rather than letting a user ask for a graph that cannot be visualized.
+ */
+const MAX_GRAPH_NODES = 10_000;
+
 const STEPS: WizardStepMeta[] = [
   { key: "describe", label: "Domain" },
   { key: "ontology", label: "Review ontology" },
@@ -293,13 +300,20 @@ export function GraphWizard({ accessToken, api: injectedApi }: GraphWizardProps)
           ) : null}
 
           <div className="grid gap-6 sm:grid-cols-2">
-            <Field label="Node count" htmlFor="graph-node-count">
+            <Field
+              label="Node count"
+              htmlFor="graph-node-count"
+              hint={`Up to ${MAX_GRAPH_NODES.toLocaleString()} nodes for this demo.`}
+            >
               <TextInput
                 id="graph-node-count"
                 type="number"
                 min={1}
+                max={MAX_GRAPH_NODES}
                 value={nodeCount}
-                onChange={(e) => setNodeCount(Number(e.target.value) || 0)}
+                onChange={(e) =>
+                  setNodeCount(Math.min(MAX_GRAPH_NODES, Number(e.target.value) || 0))
+                }
               />
             </Field>
             <Field label="Topology" htmlFor="graph-topology" hint={GRAPH_TOPOLOGIES.find((t) => t.value === topology)?.hint}>

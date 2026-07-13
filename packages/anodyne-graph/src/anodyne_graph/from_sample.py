@@ -7,20 +7,31 @@ networkx) we learn, then regenerate to match:
   (``nx.expected_degree_graph``) seeded from the empirical degree sequence,
   rescaled to the requested node count;
 - **node-type proportions** -- fraction of nodes per type;
-- **per-type attribute distributions** -- empirical value pools per non-PII
-  property (numeric props keep observed min/max; others resample observed
-  values);
+- **per-type attribute distributions** -- learned per non-PII property and
+  *resampled*, never copied (see the privacy note for the exact rule);
 - **edge-type mix** -- projected onto the ontology's domain/range, like the
   topology engine.
 
 **Privacy.** No differential privacy is claimed (out of scope). Protection comes
 from (a) faking *all* PII properties, (b) minting fresh node ids, and (c)
 regenerating topology stochastically so structure is matched only in
-distribution. On top of that we enforce a **no-verbatim-subgraph** guarantee:
-we fingerprint every edge by ``(edge_type, sorted endpoint property items +
-type)`` for both input and output and assert the two fingerprint sets are
-disjoint (see ``assert_no_verbatim_subgraph``) -- so no labeled edge of the
-input is reproduced verbatim beyond chance.
+distribution. Property values are handled to avoid leaking sensitive-but-non-PII
+fields (salary, diagnosis, free text) verbatim:
+
+- **numeric** props are *sampled* from a fitted distribution (Gaussian around
+  the empirical mean, clipped to the observed min/max) -- exact sample values
+  are never copied;
+- **low-cardinality, short categoricals** (<= 20 distinct labels, each <= 32
+  chars) resample observed *labels* -- this is statistical matching, not a
+  personal leak, and is the one place observed values recur by design;
+- **high-cardinality / free-text / long-string** props are synthesized via
+  Faker -- their values are never copied from the sample.
+
+On top of that we enforce a **no-verbatim-subgraph** guarantee: we fingerprint
+every edge by ``(edge_type, sorted endpoint property items + type)`` for both
+input and output and assert the two fingerprint sets are disjoint (see
+``assert_no_verbatim_subgraph``) -- so no labeled edge of the input is
+reproduced verbatim beyond chance.
 """
 
 from __future__ import annotations
@@ -168,11 +179,15 @@ class FromSampleGraphGenerator:
             raise GraphGenerationError("sample graph has no nodes to learn from")
         rng = np.random.default_rng([seed, shard_index])
         fake = Faker()
-        Faker.seed(seed * 1_000_003 + shard_index * 7919 + start_index)
+        # Per-instance seed (not global `Faker.seed`) so concurrent shards each
+        # get an independent, deterministic Faker without racing on shared state.
+        fake.seed_instance(seed * 1_000_003 + shard_index * 7919 + start_index)
         n = max(1, count)
 
         type_of = self._assign_types(n, rng)
-        node_ids = [f"{type_of[i]}:{i}" for i in range(n)]
+        # Shard-global ids (incorporate `start_index`) so multi-shard assembly
+        # never dedups distinct nodes; identical to `{type}:{i}` for start_index 0.
+        node_ids = [f"{type_of[i]}:{start_index + i}" for i in range(n)]
         graph = self._synthesize_topology(n, rng)
         nodes = [
             Node(id=node_ids[i], type=type_of[i], properties=self._attrs(type_of[i], rng, fake))
@@ -240,13 +255,21 @@ class FromSampleGraphGenerator:
             if prop.datatype in ("integer", "float") and pool:
                 nums = [float(x) for x in pool if _is_number(x)]
                 if nums:
+                    # Numeric: SAMPLE a fresh value from a fitted range (Gaussian
+                    # around the empirical mean, clipped to observed min/max) --
+                    # never copy an exact sample value.
                     lo, hi = min(nums), max(nums)
-                    val = lo + rng.random() * (hi - lo)
-                    props[prop.name] = int(round(val)) if prop.datatype == "integer" else float(val)
+                    mean, std = float(np.mean(nums)), float(np.std(nums))
+                    val = float(np.clip(rng.normal(mean, std or 1.0), lo, hi))
+                    props[prop.name] = int(round(val)) if prop.datatype == "integer" else val
                     continue
-            if pool:
+            if pool and _is_low_cardinality_categorical(pool):
+                # Low-cardinality short categoricals: resampling observed LABELS
+                # is statistical matching, not a verbatim leak -- kept by design.
                 props[prop.name] = pool[int(rng.integers(0, len(pool)))]
             else:
+                # High-cardinality / free-text / long strings (and empty pools):
+                # synthesize -- never copy sample values verbatim.
                 props[prop.name] = fake.word()
         return props
 
@@ -266,3 +289,18 @@ def _is_number(x: Any) -> bool:
         return True
     except (TypeError, ValueError):
         return False
+
+
+# A property is a "low-cardinality categorical" -- and thus safe to resample by
+# LABEL (statistical matching, not a verbatim leak) -- when it has few distinct,
+# short values. Anything else (free text, long strings, high cardinality) is
+# synthesized instead of copied.
+_MAX_CATEGORY_LABELS = 20
+_MAX_CATEGORY_LEN = 32
+
+
+def _is_low_cardinality_categorical(pool: list[Any]) -> bool:
+    distinct = {str(v) for v in pool}
+    if len(distinct) > _MAX_CATEGORY_LABELS:
+        return False
+    return all(len(v) <= _MAX_CATEGORY_LEN for v in distinct)

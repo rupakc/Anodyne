@@ -67,8 +67,11 @@ def test_cypher_contains_expected_create_lines() -> None:
     edge_creates = [line for line in lines if "CREATE (a)-[:" in line]
     assert len(node_creates) == 3
     assert len(edge_creates) == 3
-    assert any(line.startswith("CREATE (:Person ") and 'id: "p1"' in line for line in node_creates)
-    assert any('MATCH (a {id: "p1"}), (b {id: "c1"})' in line for line in lines)
+    assert any(
+        line.startswith("CREATE (:Person ") and '_nid: "p1"' in line for line in node_creates
+    )
+    # Endpoints are matched on the same synthetic `_nid` key they were created with.
+    assert any('MATCH (a {_nid: "p1"}), (b {_nid: "c1"})' in line for line in lines)
     assert any("[:WORKS_AT" in line for line in edge_creates)
 
 
@@ -92,6 +95,65 @@ def test_neo4j_csv_zip_has_expected_headers_and_rows() -> None:
     works_at_csv = zf.read("edges_WORKS_AT.csv").decode("utf-8").splitlines()
     assert works_at_csv[0] == ":START_ID,:END_ID,:TYPE,since"
     assert len(works_at_csv) == 3  # header + 2 WORKS_AT rows
+
+
+def _id_collision_dataset() -> GraphDataset:
+    """An ontology whose properties literally collide with reserved/lookup keys
+    (`id`, `type`, `key`, `directed`) -- the regression fixture for both the
+    networkx reserved-kwarg crash and the Cypher `_nid` matching bug."""
+    nodes = [
+        Node(
+            id="a",
+            type="Thing",
+            properties={"id": "USER-1", "type": "x", "key": "k", "directed": "no"},
+        ),
+        Node(
+            id="b",
+            type="Thing",
+            properties={"id": "USER-2", "type": "y", "key": "j", "directed": "yes"},
+        ),
+    ]
+    edges = [Edge(id="r1", type="LINKS", source="a", target="b", properties={"id": "EDGE-9"})]
+    ontology = GraphOntology(
+        node_types=[
+            NodeType(
+                name="Thing",
+                properties=[
+                    PropertySpec(name="id", datatype="string"),
+                    PropertySpec(name="type", datatype="string"),
+                    PropertySpec(name="key", datatype="string"),
+                    PropertySpec(name="directed", datatype="string"),
+                ],
+            )
+        ],
+        edge_types=[EdgeType(name="LINKS", source_type="Thing", target_type="Thing")],
+    )
+    return GraphDataset(
+        ontology=ontology, nodes=nodes, edges=edges, metrics=compute_metrics(nodes, edges)
+    )
+
+
+def test_graphml_gexf_export_with_reserved_kwarg_property_names() -> None:
+    # A property named `type`/`id`/`key`/`directed` must not crash the writer
+    # (networkx reserved-kwarg TypeError regression).
+    ds = _id_collision_dataset()
+    gml = nx.read_graphml(io.BytesIO(encode_dataset(ds, "graphml")))
+    assert gml.number_of_nodes() == 2 and gml.number_of_edges() == 1
+    assert gml.nodes["a"]["type"] == "Thing"  # structural type wins over the property
+    gexf = nx.read_gexf(io.BytesIO(encode_dataset(ds, "gexf")))
+    assert gexf.number_of_nodes() == 2 and gexf.number_of_edges() == 1
+
+
+def test_cypher_with_id_property_still_creates_all_relationships() -> None:
+    # A user property named `id` must not clobber the endpoint lookup key.
+    data = encode_dataset(_id_collision_dataset(), "cypher").decode("utf-8")
+    lines = data.splitlines()
+    edge_creates = [line for line in lines if "CREATE (a)-[:" in line]
+    assert len(edge_creates) == 1  # the relationship is created, not silently dropped
+    # The MATCH uses `_nid` (the real node id), not the user `id` property.
+    assert 'MATCH (a {_nid: "a"}), (b {_nid: "b"})' in data
+    # The user `id` property is preserved verbatim on the created nodes.
+    assert 'id: "USER-1"' in data and 'id: "USER-2"' in data
 
 
 def test_graph_json_is_passthrough_and_lossless() -> None:

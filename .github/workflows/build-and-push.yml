@@ -88,7 +88,7 @@ jobs:
       # Vulnerability gate: fail the run (and therefore the push below never
       # runs) on any HIGH or CRITICAL finding in OS packages or language deps.
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: anodyne/${{ matrix.image }}:ci
           format: table
@@ -97,8 +97,13 @@ jobs:
           ignore-unfixed: true
 
       # --- Push (main branch + version tags only) -------------------------
+      # These steps are additionally gated on `vars.GCP_WORKLOAD_IDENTITY_PROVIDER`
+      # being set: until the one-time GCP OIDC/WIF wiring is done (a documented
+      # follow-up — see docs/deployment.md), the build + SBOM + Trivy gate still
+      # run on every push/PR for signal, but the registry push is skipped instead
+      # of failing the run on an empty WIF provider / missing credentials.
       - name: Determine push tags
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
         id: tags
         run: |
           set -euo pipefail
@@ -118,18 +123,18 @@ jobs:
       # outputs), not credentials, so they live in repo/org *variables*
       # (`vars.*`) — see infra/terraform/workload_identity.tf.
       - name: Authenticate to GCP (Workload Identity Federation)
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
         uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
       - name: Configure Docker for Artifact Registry
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
         run: gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev --quiet
 
       - name: Push image
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' && vars.GCP_WORKLOAD_IDENTITY_PROVIDER != ''
         uses: docker/build-push-action@v6
         with:
           context: .

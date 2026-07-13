@@ -1,14 +1,63 @@
 import Link from "next/link";
-import { ArrowRight, BookOpen } from "lucide-react";
+import {
+  ArrowRight,
+  BookOpen,
+  Table2,
+  FileText,
+  Image as ImageIcon,
+  AudioLines,
+  Video,
+  Share2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
 
-const swatches = [
-  { name: "Amber", css: "bg-amber", fg: "text-amber-foreground" },
-  { name: "Terracotta", css: "bg-terracotta", fg: "text-terracotta-foreground" },
-  { name: "Dusty rose", css: "bg-dusty-rose", fg: "text-dusty-rose-foreground" },
-  { name: "Sage", css: "bg-sage", fg: "text-sage-foreground" },
-  { name: "Cream", css: "bg-cream border border-border", fg: "text-cream-foreground" },
+// Supported generation modalities, each keyed to a brand hue from the
+// autumn-pastel palette (bg/fg tokens defined in globals.css) so the section
+// stays on-theme in both light and dark.
+const modalities = [
+  {
+    name: "Tabular",
+    body: "Typed columns from a description or a sample — Gaussian copula, CTGAN, TVAE.",
+    icon: Table2,
+    css: "bg-amber",
+    fg: "text-amber-foreground",
+  },
+  {
+    name: "Text",
+    body: "Labelled corpora for classification, QA, summarization, and chat.",
+    icon: FileText,
+    css: "bg-terracotta",
+    fg: "text-terracotta-foreground",
+  },
+  {
+    name: "Image",
+    body: "Provider-agnostic image sets, from SDXL or an external API.",
+    icon: ImageIcon,
+    css: "bg-dusty-rose",
+    fg: "text-dusty-rose-foreground",
+  },
+  {
+    name: "Audio",
+    body: "Speech and audio clips via self-hosted or hosted text-to-speech.",
+    icon: AudioLines,
+    css: "bg-sage",
+    fg: "text-sage-foreground",
+  },
+  {
+    name: "Video",
+    body: "Short text-to-video clips, provider-agnostic.",
+    icon: Video,
+    css: "bg-cream border border-border",
+    fg: "text-cream-foreground",
+  },
+  {
+    name: "Graph",
+    body: "Knowledge graphs & ontologies — RDF/OWL, property-graph, and GNN exports.",
+    icon: Share2,
+    css: "bg-amber",
+    fg: "text-amber-foreground",
+  },
 ] as const;
 
 const steps = [
@@ -117,24 +166,35 @@ export default function Home() {
           </div>
         </section>
 
-        <section className="px-6 py-16 sm:px-10 sm:py-20">
+        <section id="modalities" className="px-6 py-16 sm:px-10 sm:py-20">
           <div className="mx-auto max-w-5xl">
             <h2 className="font-[family-name:var(--font-display)] text-xl font-semibold tracking-tight">
-              Palette
+              Supported data modalities
             </h2>
             <p className="mt-2 max-w-lg text-sm text-muted-foreground">
-              Autumn pastels, tuned for readability in both light and dark —
-              soft ambers, terracotta, dusty rose, sage, and cream.
+              Generate the shape of any dataset — from a description, a
+              template, or a sample — across six modalities.
             </p>
-            <ul className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
-              {swatches.map((s) => (
-                <li
-                  key={s.name}
-                  className={`flex h-20 flex-col justify-end rounded-lg p-3 text-xs font-medium ${s.css} ${s.fg}`}
-                >
-                  {s.name}
-                </li>
-              ))}
+            <ul className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {modalities.map((m) => {
+                const Icon = m.icon;
+                return (
+                  <li
+                    key={m.name}
+                    className="flex flex-col gap-3 rounded-lg border border-border bg-card p-5"
+                  >
+                    <span
+                      className={`flex size-9 items-center justify-center rounded-md ${m.css} ${m.fg}`}
+                    >
+                      <Icon className="size-4" />
+                    </span>
+                    <h3 className="text-base font-semibold">{m.name}</h3>
+                    <p className="text-sm text-muted-foreground text-pretty">
+                      {m.body}
+                    </p>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         </section>

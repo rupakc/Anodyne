@@ -20,6 +20,7 @@ from anodyne_evaluation.models import EvalDimension, EvaluationReport, Evaluatio
 
 if TYPE_CHECKING:
     import pandas as pd  # type: ignore[import-untyped]
+    from anodyne_graph.models import GraphDataset
 
 
 class JudgeNotApplicable(Exception):
@@ -41,9 +42,14 @@ class EvaluationContext:
     through its own constructor rather than here, keeping this data-only.
     """
 
-    subject: pd.DataFrame  # the dataset version under evaluation
+    subject: pd.DataFrame  # the dataset version under evaluation (empty for graph runs)
     reference: pd.DataFrame | None = None  # the "real"/reference version, if provided
     modality: Modality = Modality.TABULAR
+    # Graph-modality artifacts (sub-system GD). The graph judges read these; the
+    # tabular/text judges never see a graph run (dispatch selects by modality),
+    # so `subject` is left an empty DataFrame when a graph is under evaluation.
+    subject_graph: GraphDataset | None = None
+    reference_graph: GraphDataset | None = None
     sensitive_field: str | None = None
     target_field: str | None = None
     text_column: str | None = None

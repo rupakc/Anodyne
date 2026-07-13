@@ -8,12 +8,28 @@ text artifacts are JSONL. The evaluation activity fetches the bytes via the
 from __future__ import annotations
 
 import io
+from typing import TYPE_CHECKING
 
 import pandas as pd  # type: ignore[import-untyped]
+
+if TYPE_CHECKING:
+    from anodyne_graph.models import GraphDataset
 
 
 class UnsupportedArtifactError(ValueError):
     """Raised when an artifact's format can't be loaded for evaluation."""
+
+
+def load_graph(data: bytes) -> GraphDataset:
+    """Parse a ``graph_json`` node-link artifact into a `GraphDataset`.
+
+    Graph versions are not columnar, so they bypass the DataFrame `load_artifact`
+    path; the graph judges receive the `GraphDataset` directly via the evaluation
+    context. Imported lazily to keep this module's base import cheap.
+    """
+    from anodyne_graph.serialization import from_json_bytes
+
+    return from_json_bytes(data)
 
 
 def load_artifact(data: bytes, fmt: str) -> pd.DataFrame:

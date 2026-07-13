@@ -16,12 +16,13 @@ import uuid
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
+import pandas as pd  # type: ignore[import-untyped]
 from anodyne_core.models import ModelConfig
 from anodyne_core.ports import LLMProvider, ObjectStore
 from anodyne_dataset.models import DatasetVersion, Modality
 from anodyne_dataset.ports import DatasetRepository
-from anodyne_evaluation.evaluator import MoEEvaluator, default_judges, sequential_runner
-from anodyne_evaluation.loader import load_artifact
+from anodyne_evaluation.evaluator import MoEEvaluator, judges_for_modality, sequential_runner
+from anodyne_evaluation.loader import load_artifact, load_graph
 from anodyne_evaluation.models import EvaluationConfig, EvaluationRun, EvaluationStatus
 from anodyne_evaluation.ports import EvaluationContext, EvaluationRepository, JudgeRunner
 from anodyne_evaluation.registry import (
@@ -105,29 +106,45 @@ async def run_evaluation(inp: EvaluationInput) -> str:
 
     store = _object_store(ctx, tenant_id)
     version = await _load_version(ctx, tenant_id, dataset_id, version_id)
-    subject = load_artifact(await store.get(version.artifact_uri), version.format)
-
-    reference = None
     ref_id = uuid.UUID(inp.reference_version_id) if inp.reference_version_id else None
-    if ref_id is not None:
-        ref_version = await _load_version(ctx, tenant_id, dataset_id, ref_id)
-        reference = load_artifact(await store.get(ref_version.artifact_uri), ref_version.format)
 
     spec: DatasetSpec | None = await ctx.dataset_repo.get_spec(tenant_id, dataset_id)
+    modality = spec.modality if spec else Modality.TABULAR
+
+    # Graph versions are node-link JSON (not columnar): load them into a
+    # `GraphDataset` for the graph judges and leave `subject` an empty frame.
+    # Every other modality keeps the DataFrame path.
+    subject: pd.DataFrame = pd.DataFrame()
+    reference: pd.DataFrame | None = None
+    subject_graph = None
+    reference_graph = None
+    if modality == Modality.GRAPH:
+        subject_graph = load_graph(await store.get(version.artifact_uri))
+        if ref_id is not None:
+            ref_version = await _load_version(ctx, tenant_id, dataset_id, ref_id)
+            reference_graph = load_graph(await store.get(ref_version.artifact_uri))
+    else:
+        subject = load_artifact(await store.get(version.artifact_uri), version.format)
+        if ref_id is not None:
+            ref_version = await _load_version(ctx, tenant_id, dataset_id, ref_id)
+            reference = load_artifact(await store.get(ref_version.artifact_uri), ref_version.format)
+
     eval_ctx = EvaluationContext(
         subject=subject,
         reference=reference,
-        modality=spec.modality if spec else Modality.TABULAR,
+        modality=modality,
         sensitive_field=cfg.sensitive_field,
         target_field=cfg.target_field,
         text_column=cfg.text_column,
         sample_rows=cfg.sample_rows,
         seed=inp.seed or cfg.seed,
         metadata={"description": spec.description if spec else ""},
+        subject_graph=subject_graph,
+        reference_graph=reference_graph,
     )
 
     provider, model_cfg = await _resolve_llm(ctx, tenant_id, cfg)
-    evaluator = MoEEvaluator(default_judges(provider, model_cfg), runner=ctx.runner)
+    evaluator = MoEEvaluator(judges_for_modality(modality, provider, model_cfg), runner=ctx.runner)
     report = await evaluator.evaluate(
         eval_ctx,
         tenant_id=tenant_id,

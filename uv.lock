@@ -360,9 +360,11 @@ source = { editable = "packages/anodyne-evaluation" }
 dependencies = [
     { name = "anodyne-core" },
     { name = "anodyne-dataset" },
+    { name = "anodyne-graph" },
     { name = "anodyne-llm" },
     { name = "anodyne-storage" },
     { name = "anodyne-tabular" },
+    { name = "networkx" },
     { name = "numpy" },
     { name = "pandas" },
     { name = "pyarrow" },
@@ -374,9 +376,11 @@ dependencies = [
 requires-dist = [
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "anodyne-graph", editable = "packages/anodyne-graph" },
     { name = "anodyne-llm", editable = "packages/anodyne-llm" },
     { name = "anodyne-storage", editable = "packages/anodyne-storage" },
     { name = "anodyne-tabular", editable = "packages/anodyne-tabular" },
+    { name = "networkx", specifier = ">=3.2" },
     { name = "numpy", specifier = ">=2" },
     { name = "pandas", specifier = ">=2.2,<3" },
     { name = "pyarrow", specifier = ">=17" },

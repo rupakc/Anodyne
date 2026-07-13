@@ -20,10 +20,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-import sqlalchemy as sa
 from alembic import op
 from anodyne_storage.db import metadata
-from sqlalchemy.dialects.postgresql import UUID as PgUUID
 
 # revision identifiers, used by Alembic.
 revision: str = "perturbation_jobs"
@@ -38,10 +36,9 @@ _TENANT_TABLES: dict[str, str] = {
 
 def upgrade() -> None:
     bind = op.get_bind()
-    op.add_column(
-        "dataset_versions",
-        sa.Column("parent_version_id", PgUUID(as_uuid=True), nullable=True),
-    )
+    # `dataset_versions.parent_version_id` is part of the shared `dataset_versions`
+    # Table in anodyne_storage.db, so it is already created by 0002's
+    # metadata.create_all — do NOT re-add it here (would raise DuplicateColumn).
     tables = [metadata.tables[name] for name in _TENANT_TABLES]
     metadata.create_all(bind, tables=tables)
 
@@ -58,4 +55,3 @@ def downgrade() -> None:
     bind = op.get_bind()
     tables = [metadata.tables[name] for name in _TENANT_TABLES]
     metadata.drop_all(bind, tables=tables)
-    op.drop_column("dataset_versions", "parent_version_id")

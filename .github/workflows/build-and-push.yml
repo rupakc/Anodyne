@@ -88,7 +88,11 @@ jobs:
       # Vulnerability gate: fail the run (and therefore the push below never
       # runs) on any HIGH or CRITICAL finding in OS packages or language deps.
       - name: Trivy scan
-        uses: aquasecurity/trivy-action@v0.28.0
+        # v0.36.0 pins its internal aquasecurity/setup-trivy dependency by commit
+        # SHA. Earlier tags (<=v0.30) pinned it by tag (v0.2.1/v0.2.2) which
+        # upstream later deleted, so those versions no longer resolve at all and
+        # fail every job at "Set up job".
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: anodyne/${{ matrix.image }}:ci
           format: table

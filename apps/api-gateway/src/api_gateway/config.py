@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     # failure ("Failed to fetch"). Defaults cover local dev; set explicitly
     # (e.g. the deployed web origin) in other environments.
     cors_allow_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
+    # TTL (seconds) applied to presigned download URLs the gateway hands back
+    # for artifacts/reports. Default 24h so a link the user opens well after a
+    # page was rendered doesn't fail with "Signature has expired". Env:
+    # `ANODYNE_PRESIGNED_TTL`.
+    presigned_ttl: int = 86400
 
 
 def get_settings() -> Settings:

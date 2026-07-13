@@ -19,11 +19,12 @@ from anodyne_dataset.ports import DatasetRepository
 from anodyne_evaluation.models import EvaluationRun
 from anodyne_evaluation.ports import EvaluationRepository
 from anodyne_workflows.evaluation_workflow import EvaluationInput, EvaluationWorkflow
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from temporalio.client import Client
 
 from api_gateway import deps
+from api_gateway.config import get_settings
 
 
 class EvaluateRequest(BaseModel):
@@ -131,16 +132,20 @@ def build_router() -> APIRouter:
     @router.get("/evaluations/{run_id}/report/download")
     async def download_evaluation_report(
         run_id: UUID,
+        format: str = Query("html"),
         ctx: TenantContext = Depends(deps.require("evaluations:read")),
         eval_repo: EvaluationRepository = Depends(deps.get_evaluation_repo),
         object_store: ObjectStore = Depends(deps.get_object_store),
     ) -> dict[str, str]:
+        if format not in ("html", "json"):
+            raise HTTPException(400, f"unsupported format {format!r}; expected 'html' or 'json'")
         run = await eval_repo.get_run(ctx.tenant_id, run_id)
         if run is None:
             raise HTTPException(404, "evaluation not found")
-        if run.report_html_uri is None:
+        uri = run.report_html_uri if format == "html" else run.report_uri
+        if uri is None:
             raise HTTPException(409, "evaluation report not ready")
-        url = await object_store.presigned_url(run.report_html_uri)
+        url = await object_store.presigned_url(uri, expires=get_settings().presigned_ttl)
         return {"url": url}
 
     return router

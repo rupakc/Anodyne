@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from api_gateway import deps
+from api_gateway.config import get_settings
 
 router = APIRouter()
 
@@ -52,5 +53,7 @@ async def export_version(
 
     artifact = await exporter.export(version, object_store, format=body.format)
     await export_repo.add_export(artifact)
-    url = await object_store.presigned_url(artifact.object_key)
+    url = await object_store.presigned_url(
+        artifact.object_key, expires=get_settings().presigned_ttl
+    )
     return {"artifact": artifact.model_dump(mode="json"), "url": url}

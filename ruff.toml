@@ -1,7 +1,7 @@
 line-length = 100
 target-version = "py312"
 # `.claude/worktrees/*` holds transient agent worktree copies; never lint them.
-extend-exclude = [".claude"]
+extend-exclude = [".claude", "scripts"]
 
 [lint]
 select = ["E", "F", "I", "UP", "B", "ASYNC"]

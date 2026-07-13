@@ -37,6 +37,10 @@ export function ExportPanel({
     setResult(null);
     try {
       const res = await api.exportVersion(datasetId, versionId, format || undefined);
+      // Open the freshly-signed URL immediately so it can never go stale between
+      // render and click. To download again the user re-runs the export (which
+      // re-signs) — we never persist an href for a later click.
+      window.open(res.url, "_blank", "noopener,noreferrer");
       setResult(res);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Export failed. Please try again.");
@@ -81,18 +85,18 @@ export function ExportPanel({
       {result ? (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-sage/40 bg-sage/10 px-4 py-3 text-sm">
           <span>
-            {result.artifact.format.toUpperCase()} export ready ·{" "}
+            {result.artifact.format.toUpperCase()} export ready · download started ·{" "}
             {result.artifact.row_count.toLocaleString()} rows
           </span>
-          <a
-            href={result.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-lg bg-terracotta px-3 py-1.5 text-sm font-medium text-terracotta-foreground transition-colors hover:bg-terracotta/85"
+          <button
+            type="button"
+            onClick={handleExport}
+            disabled={pending}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-terracotta px-3 py-1.5 text-sm font-medium text-terracotta-foreground transition-colors hover:bg-terracotta/85 disabled:opacity-60"
           >
             <Download className="size-3.5" />
-            Download
-          </a>
+            Download again
+          </button>
         </div>
       ) : null}
     </div>

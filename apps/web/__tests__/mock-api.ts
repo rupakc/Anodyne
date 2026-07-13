@@ -32,7 +32,7 @@ export function baseMockApi(overrides: Partial<ApiClient> = {}): ApiClient {
     evaluate: vi.fn(),
     getEvaluation: vi.fn(),
     getEvaluationReport: vi.fn(),
-    evaluationReportUrl: vi.fn(),
+    reportDownloadUrl: vi.fn(),
     listReviews: vi.fn(),
     getReview: vi.fn(),
     submitReviewDecision: vi.fn(),

@@ -1,5 +1,6 @@
 "use client";
 
+import { useId, useState } from "react";
 import { EVAL_DIMENSIONS, type EvaluationReport, type ExpertScore } from "@/lib/api";
 import { FeedbackWidget } from "@/components/feedback-widget";
 
@@ -122,7 +123,25 @@ function ScoreBar({ score }: { score: number }) {
   );
 }
 
+/**
+ * Render one metric value readably: numbers to a few decimals (integers kept
+ * whole), booleans/strings as-is, and nested objects/arrays as compact JSON.
+ */
+function formatMetricValue(value: unknown): string {
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? String(value) : value.toFixed(3);
+  }
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "string") return value;
+  if (value === null || value === undefined) return "—";
+  return JSON.stringify(value);
+}
+
 function ExpertCard({ expert }: { expert: ExpertScore }) {
+  const [open, setOpen] = useState(false);
+  const panelId = useId();
+  const metricEntries = Object.entries(expert.metrics ?? {});
+
   return (
     <li className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-5 shadow-sm">
       <div className="flex items-center justify-between gap-3">
@@ -138,14 +157,43 @@ function ExpertCard({ expert }: { expert: ExpertScore }) {
       {expert.rationale ? (
         <p className="text-sm text-muted-foreground text-pretty">{expert.rationale}</p>
       ) : null}
-      {expert.recommendations.length > 0 ? (
-        <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-muted-foreground">
-          {expert.recommendations.map((rec, i) => (
-            <li key={i} className="text-pretty">
-              {rec}
-            </li>
-          ))}
-        </ul>
+
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-controls={panelId}
+        className="inline-flex w-fit items-center gap-1 rounded-lg border border-amber/40 bg-amber/10 px-2.5 py-1 text-xs font-medium tracking-wide text-foreground uppercase transition-colors hover:bg-amber/20 focus-visible:ring-2 focus-visible:ring-terracotta focus-visible:outline-none"
+      >
+        {open ? "Hide details" : "Details"}
+      </button>
+
+      {open ? (
+        <div id={panelId} className="flex flex-col gap-3 border-t border-border pt-3">
+          {metricEntries.length > 0 ? (
+            <dl className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-1.5 text-sm">
+              {metricEntries.map(([key, value]) => (
+                <div key={key} className="col-span-2 grid grid-cols-subgrid items-baseline">
+                  <dt className="text-muted-foreground text-pretty">{labelFor(key)}</dt>
+                  <dd className="font-[family-name:var(--font-data)] text-right text-foreground">
+                    {formatMetricValue(value)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          ) : (
+            <p className="text-sm text-muted-foreground">No detailed metrics for this dimension.</p>
+          )}
+          {expert.recommendations.length > 0 ? (
+            <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-muted-foreground">
+              {expert.recommendations.map((rec, i) => (
+                <li key={i} className="text-pretty">
+                  {rec}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
       ) : null}
     </li>
   );

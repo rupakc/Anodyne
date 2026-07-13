@@ -44,7 +44,7 @@ export function EvaluationView({
   const [run, setRun] = useState<EvaluationRun | null>(null);
   const [report, setReport] = useState<EvaluationReport | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState(false);
+  const [downloading, setDownloading] = useState<"html" | "json" | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const reportFetched = useRef(false);
   const reportInFlight = useRef(false);
@@ -107,18 +107,22 @@ export function EvaluationView({
     };
   }, [api, evaluationId, pollIntervalMs]);
 
-  const handleDownload = useCallback(async () => {
-    setDownloading(true);
-    setDownloadError(null);
-    try {
-      const url = await api.evaluationReportUrl(evaluationId);
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      setDownloadError(err instanceof Error ? err.message : "Failed to get a download link.");
-    } finally {
-      setDownloading(false);
-    }
-  }, [api, evaluationId]);
+  const handleDownload = useCallback(
+    async (format: "html" | "json") => {
+      setDownloading(format);
+      setDownloadError(null);
+      try {
+        // Fetch a freshly-signed URL on every click so it can never be stale.
+        const url = await api.reportDownloadUrl(evaluationId, format);
+        window.open(url, "_blank", "noopener,noreferrer");
+      } catch (err) {
+        setDownloadError(err instanceof Error ? err.message : "Failed to get a download link.");
+      } finally {
+        setDownloading(null);
+      }
+    },
+    [api, evaluationId],
+  );
 
   if (error && !run) {
     return <ErrorAlert>{error}</ErrorAlert>;
@@ -140,9 +144,24 @@ export function EvaluationView({
         description="A panel of expert judges scores the dataset across fidelity, diversity, privacy, utility, bias, and qualitative dimensions."
         actions={
           isDone ? (
-            <Button type="button" variant="outline" onClick={handleDownload} disabled={downloading}>
-              {downloading ? "Preparing…" : "Download report"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleDownload("html")}
+                disabled={downloading !== null}
+              >
+                {downloading === "html" ? "Preparing…" : "Download report (HTML)"}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => handleDownload("json")}
+                disabled={downloading !== null}
+              >
+                {downloading === "json" ? "Preparing…" : "Download report (JSON)"}
+              </Button>
+            </div>
           ) : undefined
         }
       />

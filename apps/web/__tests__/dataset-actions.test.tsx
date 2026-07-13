@@ -47,18 +47,25 @@ const PJOB: PerturbationJob = {
 };
 
 describe("ExportPanel", () => {
-  it("shows the auto→CSV hint and exports, surfacing the presigned URL", async () => {
+  it("shows the auto→CSV hint and opens a fresh presigned URL immediately on export", async () => {
     const user = userEvent.setup();
+    const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
     const api = baseMockApi({ exportVersion: vi.fn().mockResolvedValue(EXPORT) });
 
     render(<ExportPanel api={api} datasetId="d-1" versionId="v-1" rowCount={100} />);
     expect(screen.getByText(/auto picks parquet/i)).toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /export/i }));
+    await user.click(screen.getByRole("button", { name: /^export$/i }));
     await waitFor(() => expect(api.exportVersion).toHaveBeenCalledWith("d-1", "v-1", undefined));
 
-    const link = await screen.findByRole("link", { name: /download/i });
-    expect(link).toHaveAttribute("href", EXPORT.url);
+    // The freshly-signed URL is opened immediately — never persisted as a stale href.
+    await waitFor(() =>
+      expect(openSpy).toHaveBeenCalledWith(EXPORT.url, "_blank", "noopener,noreferrer"),
+    );
+    // A "Download again" button re-runs the export (re-signs) rather than reusing a stale link.
+    expect(screen.queryByRole("link", { name: /download/i })).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /download again/i })).toBeInTheDocument();
+    openSpy.mockRestore();
   });
 });
 

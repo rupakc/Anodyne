@@ -463,7 +463,8 @@ export interface ApiClient {
   evaluate(datasetId: string, versionId: string, input: EvaluateInput): Promise<EvaluationRun>;
   getEvaluation(id: string): Promise<EvaluationRun>;
   getEvaluationReport(id: string): Promise<EvaluationReport>;
-  evaluationReportUrl(id: string): Promise<string>;
+  /** Fresh presigned download URL for the evaluation report in the given format. */
+  reportDownloadUrl(id: string, format?: "html" | "json"): Promise<string>;
 
   // --- HITL: reviews / annotations / feedback ---
   listReviews(status?: string): Promise<ReviewItem[]>;
@@ -587,8 +588,10 @@ export function createApiClient(accessToken: string | undefined, baseUrl: string
       }),
     getEvaluation: (id) => request<EvaluationRun>(`/evaluations/${id}`),
     getEvaluationReport: (id) => request<EvaluationReport>(`/evaluations/${id}/report`),
-    evaluationReportUrl: (id) =>
-      request<{ url: string }>(`/evaluations/${id}/report/download`).then((r) => r.url),
+    reportDownloadUrl: (id, format = "html") =>
+      request<{ url: string }>(
+        `/evaluations/${id}/report/download?format=${encodeURIComponent(format)}`,
+      ).then((r) => r.url),
 
     listReviews: (status) =>
       request<ReviewItem[]>(`/reviews${status ? `?status=${encodeURIComponent(status)}` : ""}`),

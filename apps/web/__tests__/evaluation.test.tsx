@@ -44,7 +44,13 @@ const REPORT: EvaluationReport = {
   summary: "The synthetic data closely matches the reference distribution.",
   recommendations: ["Increase sample diversity in the tail."],
   expert_scores: [
-    { dimension: "fidelity", score: 0.9, rationale: "Marginals align well.", metrics: {}, recommendations: [] },
+    {
+      dimension: "fidelity",
+      score: 0.9,
+      rationale: "Marginals align well.",
+      metrics: { ks_statistic: 0.1234, tstr_accuracy: 0.87 },
+      recommendations: [],
+    },
     { dimension: "diversity", score: 0.7, rationale: "Some mode collapse.", metrics: {}, recommendations: ["Raise temperature."] },
     { dimension: "privacy", score: 0.95, rationale: "No leakage detected.", metrics: {}, recommendations: [] },
   ],
@@ -83,24 +89,41 @@ describe("EvaluationView", () => {
     expect(api.getEvaluationReport).toHaveBeenCalledWith("eval-1");
   });
 
-  it("downloads the report by resolving its presigned URL and opening it", async () => {
+  it("downloads the report (HTML and JSON) by resolving a fresh presigned URL and opening it", async () => {
     const user = userEvent.setup();
     const openSpy = vi.spyOn(window, "open").mockImplementation(() => null);
+    const reportDownloadUrl = vi
+      .fn()
+      .mockImplementation((_id: string, format: "html" | "json") =>
+        Promise.resolve(`https://minio.local/report-1.${format}?sig=abc`),
+      );
     const api = baseMockApi({
       getEvaluation: vi.fn().mockResolvedValue(SUCCEEDED),
       getEvaluationReport: vi.fn().mockResolvedValue(REPORT),
-      evaluationReportUrl: vi.fn().mockResolvedValue("https://minio.local/report-1.html?sig=abc"),
+      reportDownloadUrl,
     });
 
     render(<EvaluationView evaluationId="eval-1" api={api} pollIntervalMs={10_000} />);
 
-    const button = await screen.findByRole("button", { name: /download report/i });
-    await user.click(button);
+    const htmlButton = await screen.findByRole("button", { name: /download report \(html\)/i });
+    await user.click(htmlButton);
 
-    await waitFor(() => expect(api.evaluationReportUrl).toHaveBeenCalledWith("eval-1"));
+    await waitFor(() => expect(reportDownloadUrl).toHaveBeenCalledWith("eval-1", "html"));
     await waitFor(() =>
       expect(openSpy).toHaveBeenCalledWith(
         "https://minio.local/report-1.html?sig=abc",
+        "_blank",
+        "noopener,noreferrer",
+      ),
+    );
+
+    const jsonButton = await screen.findByRole("button", { name: /download report \(json\)/i });
+    await user.click(jsonButton);
+
+    await waitFor(() => expect(reportDownloadUrl).toHaveBeenCalledWith("eval-1", "json"));
+    await waitFor(() =>
+      expect(openSpy).toHaveBeenCalledWith(
+        "https://minio.local/report-1.json?sig=abc",
         "_blank",
         "noopener,noreferrer",
       ),
@@ -146,10 +169,47 @@ describe("EvalReport", () => {
 
     // Radar summary is exposed for screen readers.
     expect(screen.getByRole("img", { name: /dimension scores out of 100/i })).toBeInTheDocument();
+    // Rationale (summary) is visible while cards are collapsed.
     expect(screen.getByText("Marginals align well.")).toBeInTheDocument();
-    expect(screen.getByText("Raise temperature.")).toBeInTheDocument();
     expect(screen.getByText("Increase sample diversity in the tail.")).toBeInTheDocument();
     // Per-expert progressbars (one per dimension).
     expect(screen.getAllByRole("progressbar").length).toBe(REPORT.expert_scores.length);
+    // Expert cards are collapsed by default.
+    expect(screen.getAllByRole("button", { name: /^details$/i })).toHaveLength(
+      REPORT.expert_scores.length,
+    );
+  });
+
+  it("expands an expert card on click to reveal its metrics", async () => {
+    const user = userEvent.setup();
+    render(<EvalReport report={REPORT} />);
+
+    // The fidelity metric value is hidden until the card is expanded.
+    expect(screen.queryByText("0.123")).not.toBeInTheDocument();
+
+    const toggles = screen.getAllByRole("button", { name: /^details$/i });
+    const fidelityToggle = toggles[0];
+    expect(fidelityToggle).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(fidelityToggle);
+
+    expect(fidelityToggle).toHaveAttribute("aria-expanded", "true");
+    // KS statistic rendered to a few decimals, with a formatted key label.
+    expect(screen.getByText("0.123")).toBeInTheDocument();
+    expect(screen.getByText("Ks statistic")).toBeInTheDocument();
+  });
+
+  it("shows an expert's recommendations only in the expanded state", async () => {
+    const user = userEvent.setup();
+    render(<EvalReport report={REPORT} />);
+
+    // Diversity's recommendation is collapsed initially.
+    expect(screen.queryByText("Raise temperature.")).not.toBeInTheDocument();
+
+    // Second card is diversity (canonical dimension order).
+    const toggles = screen.getAllByRole("button", { name: /^details$/i });
+    await user.click(toggles[1]);
+
+    expect(screen.getByText("Raise temperature.")).toBeInTheDocument();
   });
 });

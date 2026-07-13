@@ -744,7 +744,9 @@ def create_app() -> FastAPI:
         version = next((v for v in versions if v.id == version_id), None)
         if version is None:
             raise HTTPException(404, "version not found")
-        url = await object_store.presigned_url(version.artifact_uri)
+        url = await object_store.presigned_url(
+            version.artifact_uri, expires=get_settings().presigned_ttl
+        )
         return {"url": url}
 
     # Evaluation Engine (sub-system F) routes live in a focused module.

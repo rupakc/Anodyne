@@ -138,7 +138,7 @@ async def test_set_status_preserves_workflow_id_and_message() -> None:
     assert stored.progress == 0.5
 
 
-async def test_set_status_updates_message_when_passed() -> None:
+async def test_set_status_preserves_fields_on_transition() -> None:
     job_id, tenant_id, dataset_id = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     repo = _FakeDatasetRepository()
     repo.jobs[job_id] = GenerationJob(
@@ -150,11 +150,13 @@ async def test_set_status_updates_message_when_passed() -> None:
     )
     configure_activities(ActivityContext(repo=repo, s3_bucket=_BUCKET, s3_client=None))
 
-    await set_status(_input(job_id, tenant_id, dataset_id), "failed", 0.4, message="boom")
+    await set_status(_input(job_id, tenant_id, dataset_id), "failed", 0.4)
 
     stored = repo.jobs[job_id]
+    # A status transition must preserve fields the gateway set at creation
+    # (full-column upsert concern): workflow_id and the existing message.
     assert stored.workflow_id == "wf-x"
-    assert stored.message == "boom"
+    assert stored.message == "old"
     assert stored.status == JobStatus.FAILED
 
 

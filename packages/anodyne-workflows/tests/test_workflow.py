@@ -32,7 +32,14 @@ async def test_workflow_runs_after_approval() -> None:
         calls.append("register")
 
     @activity.defn(name="set_status")
-    async def set_status(inp: GenerationInput, status: str, progress: float) -> None: ...
+    async def set_status(inp: GenerationInput, status: str, progress: float) -> None:
+        # Regression guard: Temporal only coerces an activity's args to their
+        # typed form when the workflow passes as many args as the activity
+        # declares parameters. A trailing defaulted param (args < params) makes
+        # `inp` arrive as a raw dict and every real status activity crash on
+        # `inp.tenant_id`, hanging the job. Assert the typed form here so a
+        # reintroduced signature/arg-count mismatch fails loudly in CI.
+        assert isinstance(inp, GenerationInput), f"expected GenerationInput, got {type(inp)}"
 
     async with await WorkflowEnvironment.start_time_skipping() as env:
         async with Worker(
@@ -93,7 +100,14 @@ async def test_video_workflow_runs_shared_activity_sequence() -> None:
         calls.append("register")
 
     @activity.defn(name="set_status")
-    async def set_status(inp: GenerationInput, status: str, progress: float) -> None: ...
+    async def set_status(inp: GenerationInput, status: str, progress: float) -> None:
+        # Regression guard: Temporal only coerces an activity's args to their
+        # typed form when the workflow passes as many args as the activity
+        # declares parameters. A trailing defaulted param (args < params) makes
+        # `inp` arrive as a raw dict and every real status activity crash on
+        # `inp.tenant_id`, hanging the job. Assert the typed form here so a
+        # reintroduced signature/arg-count mismatch fails loudly in CI.
+        assert isinstance(inp, GenerationInput), f"expected GenerationInput, got {type(inp)}"
 
     async with await WorkflowEnvironment.start_time_skipping() as env:
         async with Worker(

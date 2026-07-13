@@ -149,11 +149,10 @@ async def test_register_perturbed_version_sets_lineage_and_result(monkeypatch, w
 
 async def test_set_perturbation_status_updates_job(wired) -> None:  # type: ignore[no-untyped-def]
     repo, store, inp, parent = wired
-    await set_perturbation_status(inp, "running", 0.1, "go")
+    await set_perturbation_status(inp, "running", 0.1)
     job = repo.jobs[uuid.UUID(inp.job_id)]
     assert job.status is JobStatus.RUNNING
     assert job.progress == 0.1
-    assert job.message == "go"
 
 
 async def test_apply_perturbation_rejects_unsupported_format(monkeypatch, wired) -> None:  # type: ignore[no-untyped-def]

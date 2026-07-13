@@ -99,6 +99,11 @@ jobs:
           severity: HIGH,CRITICAL
           exit-code: "1"
           ignore-unfixed: true
+          # Time-boxed suppressions for HIGH CVEs vendored inside the latest
+          # Ray / Next.js releases (no version to bump to yet). See .trivyignore
+          # for the per-CVE rationale and revisit dates; the gate stays active
+          # for every other package.
+          trivyignores: .trivyignore
 
       # --- Push (main branch + version tags only) -------------------------
       # These steps are additionally gated on `vars.GCP_WORKLOAD_IDENTITY_PROVIDER`

@@ -1,0 +1,25 @@
+# Trivy vulnerability ignore list.
+#
+# Policy: the HIGH+CRITICAL gate in .github/workflows/build-and-push.yml stays
+# active for every package. Entries here are ONLY for HIGH/CRITICAL CVEs whose
+# vulnerable code is vendored inside an upstream package we already track at its
+# latest release, so there is no version to bump to until upstream reships. Each
+# entry names where the code lives and a revisit date. Remove an entry as soon
+# as a fixed upstream release is available.
+
+# --- jackson-databind, vendored in Ray's ray_dist.jar --------------------------
+# Present in the latest Ray (2.56.0, 2026-06-29 — the newest release that exists;
+# api-gateway + generation-worker images). jackson-databind 2.18.6 -> fix 2.18.8.
+# Not reachable via our Python dependency graph; only Ray reshipping the jar
+# clears it. Revisit 2026-08-01.
+CVE-2026-54512
+CVE-2026-54513
+
+# --- picomatch + sigstore, vendored in Next.js dist/compiled -------------------
+# Present in the latest stable Next.js (16.2.10; web image) under
+# next/dist/compiled/. picomatch 4.0.3 -> fix 4.0.4 (ReDoS); sigstore 3.1.0 ->
+# fix 4.1.1. Next.js bundles its own copies, so a pnpm override cannot reach
+# them; only a Next.js release refreshing its vendored deps clears these.
+# Revisit 2026-08-01.
+CVE-2026-33671
+CVE-2026-48815

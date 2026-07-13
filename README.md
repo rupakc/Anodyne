@@ -58,6 +58,7 @@ packages/
   anodyne-audio         provider-agnostic audio/TTS generation
   anodyne-video         provider-agnostic text-to-video generation
   anodyne-templates     starter templates + bias/edge-case/use-case directives
+  anodyne-graph         knowledge-graph/ontology modality — hybrid gen, RDF/property-graph/GNN export
   anodyne-perturbation  noise/drift/outlier/bias/edge-case perturbation (tabular + text)
   anodyne-export        CSV/JSON/Parquet/Arrow chunked export + presigned download
   anodyne-evaluation    LLM-as-a-Judge mixture-of-experts 360° evaluation + report
@@ -115,9 +116,10 @@ exercises Postgres row-level security via testcontainers.
 | D | Perturbation — noise, drift, outliers/anomalies, bias/edge-case (tabular + text, deterministic) | ✅ done |
 | E | Export & Storage — CSV/JSON/Parquet/Arrow, chunked/streamed, >500K→Parquet default | ✅ done |
 | F | Evaluation Engine — LLM-as-a-Judge MoE (fidelity/diversity/privacy/utility/bias/qualitative) + JSON+HTML report | ✅ done |
-| G | Human-in-the-loop & Annotation | planned |
-| H | Web UI (full, across all modalities + D/E/F) | planned |
+| G | Human-in-the-loop & Annotation — review queue, annotations, feedback, opt-in review gate | ✅ done |
+| H | Web UI — full autumn-pastel app across all modalities + perturbation/export/evaluation/HITL | ✅ done |
 | I | Deployment & CI/CD (GCP + on-prem) | ✅ Dockerfiles, CI/CD (build+SBOM+Trivy+WIF push), Cloud Run/GKE manifests, Terraform skeleton — see [`docs/deployment.md`](docs/deployment.md) |
+| Graph | Knowledge-graph / ontology modality — hybrid networkx-topology + LLM-semantics generation, ontology-constrained, RDF/OWL + property-graph + GNN export, graph MoE judges, interactive explorer | ✅ Wave 1 (GA–GE); ontology mapping + GraphRAG fixtures + graph perturbations are Wave 2 — see [`docs/superpowers/specs/2026-07-13-graph-modality-design.md`](docs/superpowers/specs/2026-07-13-graph-modality-design.md) |
 
 ## Documentation
 

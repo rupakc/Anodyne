@@ -169,7 +169,7 @@ async def register_perturbed_version(inp: PerturbationInput, uri: str, rows: int
 
 @activity.defn(name="set_perturbation_status")
 async def set_perturbation_status(
-    inp: PerturbationInput, status: str, progress: float, message: str | None = None
+    inp: PerturbationInput, status: str, progress: float
 ) -> None:
     """Update the `PerturbationJob` status and publish live progress to Redis.
 
@@ -184,8 +184,6 @@ async def set_perturbation_status(
     if job is not None:
         job.status = JobStatus(status)
         job.progress = progress
-        if message is not None:
-            job.message = message
         await ctx.perturbation_repo.save_perturbation_job(job)
     if ctx.publisher is not None:
         payload = json.dumps({"job_id": inp.job_id, "status": status, "progress": progress})

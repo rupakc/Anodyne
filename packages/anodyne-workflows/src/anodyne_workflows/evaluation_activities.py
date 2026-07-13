@@ -177,9 +177,7 @@ async def _resolve_llm(
 
 
 @activity.defn(name="set_eval_status")
-async def set_eval_status(
-    inp: EvaluationInput, status: str, progress: float, message: str | None = None
-) -> None:
+async def set_eval_status(inp: EvaluationInput, status: str, progress: float) -> None:
     ctx = _context()
     tenant_id = uuid.UUID(inp.tenant_id)
     run_id = uuid.UUID(inp.run_id)
@@ -193,6 +191,4 @@ async def set_eval_status(
         )
     run.status = EvaluationStatus(status)
     run.progress = progress
-    if message is not None:
-        run.message = message
     await ctx.repo.save_run(run)

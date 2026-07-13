@@ -218,9 +218,7 @@ async def register_version(inp: GenerationInput, uri: str, rows: int) -> None:
 
 
 @activity.defn(name="set_status")
-async def set_status(
-    inp: GenerationInput, status: str, progress: float, message: str | None = None
-) -> None:
+async def set_status(inp: GenerationInput, status: str, progress: float) -> None:
     """Update the `GenerationJob` status and publish live progress to Redis.
 
     `save_job` is a full-column upsert, so we must fetch the existing job and
@@ -238,12 +236,10 @@ async def set_status(
         job = GenerationJob(id=job_id, tenant_id=tenant_id, dataset_id=uuid.UUID(inp.dataset_id))
     job.status = JobStatus(status)
     job.progress = progress
-    if message is not None:
-        job.message = message
     await ctx.repo.save_job(job)
     if ctx.publisher is not None:
-        message = json.dumps({"job_id": inp.job_id, "status": status, "progress": progress})
-        await ctx.publisher.publish(f"job:{inp.job_id}", message)
+        payload = json.dumps({"job_id": inp.job_id, "status": status, "progress": progress})
+        await ctx.publisher.publish(f"job:{inp.job_id}", payload)
 
 
 # Import handlers for their registration side effect -- this is what populates

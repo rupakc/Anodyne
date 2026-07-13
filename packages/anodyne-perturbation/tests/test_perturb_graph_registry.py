@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from anodyne_dataset.models import PerturbationFamily, PerturbationSpec
 from anodyne_graph.models import Edge, EdgeType, GraphDataset, GraphOntology, Node, NodeType
-from anodyne_graph.serialization import to_json_bytes
 from anodyne_perturbation import RegistryPerturbator
 from anodyne_perturbation.registry import (
     get_graph_perturbation_handler,
@@ -54,9 +53,12 @@ def test_registry_perturbator_routes_graph() -> None:
     spec = PerturbationSpec(family=PerturbationFamily.GRAPH_REWIRE, intensity=1.0)
     out = perturbator.perturb_graph(spec, ds, 3)
     assert isinstance(out, GraphDataset)
-    assert {n.id for n in out.edges} != {n.id for n in ds.edges} or to_json_bytes(
-        out
-    ) != to_json_bytes(ds)
+    # Rewire preserves edge ids, so comparing ids proves nothing; assert the
+    # topology (edge endpoints) actually changed under the rewire.
+    before = sorted((e.source, e.target) for e in ds.edges)
+    after = sorted((e.source, e.target) for e in out.edges)
+    assert after != before
+    assert {e.id for e in out.edges} == {e.id for e in ds.edges}  # ids preserved
     assert {n.id for n in out.nodes} == {n.id for n in ds.nodes}
 
 

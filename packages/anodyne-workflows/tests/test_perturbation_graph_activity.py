@@ -190,3 +190,31 @@ async def test_graph_perturbation_intensity_zero_is_noop(monkeypatch) -> None:  
     monkeypatch.setattr(mod, "_object_store", lambda _inp: store)
     uri, _ = await apply_perturbation(inp)
     assert store.data[uri] == to_json_bytes(parent_ds)
+
+
+class _SpyPerturbator(RegistryPerturbator):
+    """Records that the graph path went through the *injected* perturbator."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.graph_calls = 0
+
+    def perturb_graph(self, spec, dataset, seed, modality="graph"):  # type: ignore[no-untyped-def]
+        self.graph_calls += 1
+        return super().perturb_graph(spec, dataset, seed, modality)
+
+
+async def test_graph_path_uses_injected_perturbator(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    store, inp, parent_ds = _wire(PerturbationFamily.GRAPH_DROPOUT, 1.0)
+    import anodyne_workflows.perturbation_activities as mod
+
+    monkeypatch.setattr(mod, "_object_store", lambda _inp: store)
+    spy = _SpyPerturbator()
+    mod._context().perturbator = spy  # substitute the injected perturbator
+
+    uri, rows = await apply_perturbation(inp)
+
+    assert spy.graph_calls == 1  # the graph branch used ctx.perturbator, not a module handler
+    out = from_json_bytes(store.data[uri])
+    assert out.edges == []  # and it really ran (dropout at intensity 1)
+    assert rows == len(out.nodes)

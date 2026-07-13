@@ -15,7 +15,7 @@ import io
 import json
 import uuid
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import pyarrow as pa  # type: ignore[import-untyped]
 import pyarrow.parquet as pq  # type: ignore[import-untyped]
@@ -33,9 +33,26 @@ from temporalio import activity
 
 from anodyne_workflows.perturbation_workflow import PerturbationInput
 
+if TYPE_CHECKING:
+    from anodyne_graph.models import GraphDataset
+
 
 class ProgressPublisher(Protocol):
     async def publish(self, channel: str, message: str) -> None: ...
+
+
+class _GraphPerturbator(Protocol):
+    """The graph capability the injected `RegistryPerturbator` also exposes.
+
+    `perturb_graph` is deliberately kept off the `Perturbator` port (whose
+    contract is `pa.Table`-shaped) because graph artifacts are node-link JSON.
+    The graph branch routes through the injected `ctx.perturbator` so a fake
+    perturbator is honored and the two call sites cannot drift.
+    """
+
+    def perturb_graph(
+        self, spec: PerturbationSpec, dataset: GraphDataset, seed: int, modality: str = ...
+    ) -> GraphDataset: ...
 
 
 @dataclass
@@ -158,10 +175,12 @@ async def apply_perturbation(inp: PerturbationInput) -> list[Any]:
     # (mirrors how the evaluation activity added a Modality.GRAPH branch).
     if _is_graph(parent.format, inp.modality):
         from anodyne_graph.serialization import from_json_bytes, to_json_bytes
-        from anodyne_perturbation.registry import get_graph_perturbation_handler
 
         dataset = from_json_bytes(data)
-        out_graph = get_graph_perturbation_handler(inp.modality).perturb(spec, dataset, inp.seed)
+        # Route through the injected perturbator (a `RegistryPerturbator`) so a
+        # fake substituted in tests is honored -- never the module-level handler.
+        graph_perturbator = cast("_GraphPerturbator", ctx.perturbator)
+        out_graph = graph_perturbator.perturb_graph(spec, dataset, inp.seed, inp.modality)
         key = _artifact_key(inp, "json")
         await store.put(key, to_json_bytes(out_graph))
         return [key, len(out_graph.nodes)]

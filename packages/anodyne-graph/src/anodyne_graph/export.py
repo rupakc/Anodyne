@@ -154,12 +154,8 @@ def dataset_to_rdf(dataset: GraphDataset) -> Graph:
     # Declared property datatypes, per type, so A-Box literals can be typed to
     # match the OWL T-Box range (see `_literal`).
     onto = dataset.ontology
-    node_prop_dt = {
-        nt.name: {p.name: p.datatype for p in nt.properties} for nt in onto.node_types
-    }
-    edge_prop_dt = {
-        et.name: {p.name: p.datatype for p in et.properties} for et in onto.edge_types
-    }
+    node_prop_dt = {nt.name: {p.name: p.datatype for p in nt.properties} for nt in onto.node_types}
+    edge_prop_dt = {et.name: {p.name: p.datatype for p in et.properties} for et in onto.edge_types}
     for node in sorted(dataset.nodes, key=lambda n: n.id):
         subj = EX[_local(node.id)]
         g.add((subj, RDF.type, ONTO[_local(node.type)]))

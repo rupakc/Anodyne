@@ -170,9 +170,7 @@ def _undirected_target_dataset() -> GraphDataset:
     ontology = GraphOntology(
         node_types=[NodeType(name="Person", properties=[])],
         edge_types=[
-            EdgeType(
-                name="FRIEND", source_type="Person", target_type="Person", directed=False
-            )
+            EdgeType(name="FRIEND", source_type="Person", target_type="Person", directed=False)
         ],
     )
     nodes = [Node(id=f"P{i}", type="Person", properties={"name": f"P{i}"}) for i in range(5)]

@@ -17,9 +17,6 @@ Four template families (all covered when ``num_questions >= 4``):
 
 from __future__ import annotations
 
-import asyncio
-from typing import TYPE_CHECKING
-
 import numpy as np
 from anodyne_core.models import LLMRequest, Message, ModelConfig
 from anodyne_core.ports import LLMProvider
@@ -27,9 +24,6 @@ from anodyne_core.ports import LLMProvider
 from anodyne_graph.graphrag.models import GraphQAFixture, GraphQAItem, QAPath
 from anodyne_graph.graphrag.pathfinder import MAX_HOPS, MIN_HOPS, sample_paths
 from anodyne_graph.models import Edge, GraphDataset, Node
-
-if TYPE_CHECKING:
-    from collections.abc import Iterable
 
 CHAINED_RELATION = "chained_relation"
 AGGREGATION_COUNT = "aggregation_count"
@@ -81,7 +75,7 @@ class GraphRAGGenerator:
         self._provider = provider
         self._cfg = model_config
 
-    def generate(
+    async def generate(
         self,
         dataset: GraphDataset,
         dataset_version_id: str,
@@ -111,7 +105,7 @@ class GraphRAGGenerator:
             question, answer, answer_nodes = self._build(
                 family, path, nodes_by_id, edges_by_id, neighbors, degree, rel_types, rng
             )
-            phrased = self._refine(question, seed, i)
+            phrased = await self._refine(question, seed, i)
             items.append(
                 GraphQAItem(
                     question=phrased,
@@ -173,8 +167,13 @@ class GraphRAGGenerator:
             return question, str(len(nbrs)), sorted(nbrs)
 
         if family == EXISTENCE_NEGATION:
-            rel_type, exists = self._existence_relation(start, edges_by_id, path, rel_types, rng)
+            rel_type = self._existence_relation(start, edges_by_id, path, rel_types, neighbors, rng)
+            # Ground the answer in the SAME undirected-aware neighbor index every
+            # other family uses: a node "has" the relation iff that traversal
+            # reaches at least one neighbor (so an endpoint on the *target* side
+            # of an undirected edge counts). Never trust a source-only view.
             nbrs = neighbors.get((start.id, rel_type), [])
+            exists = bool(nbrs)
             question = f"Does {_node_label(start)} have any {_rel_phrase(rel_type)} relationship?"
             answer = "Yes" if exists else "No"
             return question, answer, sorted(nbrs) if exists else []
@@ -201,24 +200,25 @@ class GraphRAGGenerator:
         edges_by_id: dict[str, Edge],
         path: QAPath,
         rel_types: list[str],
+        neighbors: dict[tuple[str, str], list[str]],
         rng: np.random.Generator,
-    ) -> tuple[str, bool]:
-        """Pick a relation type for an existence question + its graph truth.
+    ) -> str:
+        """Pick which relation type an existence question asks about.
 
-        Sometimes a relation the start node genuinely has (answer yes), sometimes
-        one it lacks (answer no); the truth is verified against the graph either
-        way, so the answer stays grounded.
+        Sometimes a relation the start node genuinely has (leading to a "yes"),
+        sometimes one it lacks (a "no"). Presence/absence is decided by the same
+        undirected-aware `neighbors` index the caller grounds the answer with, so
+        an endpoint on the *target* side of an undirected relation is correctly
+        seen as having it. The caller computes the yes/no truth from `neighbors`.
         """
         present = edges_by_id[path.edge_ids[0]].type
-        outgoing = {
-            edges_by_id[eid].type for eid in _outgoing_edge_ids(start.id, edges_by_id.values())
-        }
-        absent = [rt for rt in rel_types if rt not in outgoing]
+        has = {rt for rt in rel_types if neighbors.get((start.id, rt))}
+        absent = [rt for rt in rel_types if rt not in has]
         if absent and bool(rng.integers(0, 2)):
-            return absent[int(rng.integers(0, len(absent)))], False
-        return present, True
+            return absent[int(rng.integers(0, len(absent)))]
+        return present
 
-    def _refine(self, question: str, seed: int, index: int) -> str:
+    async def _refine(self, question: str, seed: int, index: int) -> str:
         """LLM surface rewrite only; empty output falls back to the template."""
         if self._provider is None or self._cfg is None:
             return question
@@ -237,13 +237,9 @@ class GraphRAGGenerator:
             ],
             params={"temperature": 0, "seed": seed + index},
         )
-        response = asyncio.run(self._provider.complete(self._cfg, request))
+        response = await self._provider.complete(self._cfg, request)
         refined = response.content.strip()
         return refined or question
-
-
-def _outgoing_edge_ids(node_id: str, edges: Iterable[Edge]) -> list[str]:
-    return [e.id for e in edges if e.source == node_id]
 
 
 def _typed_neighbor_index(dataset: GraphDataset) -> dict[tuple[str, str], list[str]]:

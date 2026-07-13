@@ -1,6 +1,6 @@
 # Anodyne
 
-**Anodyne** is a cloud-agnostic, multi-tenant platform for **synthetic data generation** and
+**Anodyne** is a cloud-agnostic, enterprise-grade, multi-tenant platform for **synthetic data generation** and
 **LLM-as-a-Judge benchmarking**. It generates multimodal datasets from descriptions, templates, or
 sample data; injects controlled noise, drift, outliers, and bias; exports to multiple formats; and
 evaluates the results with a mixture-of-experts LLM judge pipeline — with human-in-the-loop review

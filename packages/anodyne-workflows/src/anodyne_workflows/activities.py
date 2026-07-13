@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol
 
 from anodyne_core.models import ModelConfig
-from anodyne_core.ports import ObjectStore, SecretStore
+from anodyne_core.ports import LLMProvider, ObjectStore, SecretStore
 from anodyne_dataset.models import DatasetSpec, DatasetVersion, GenerationJob, JobStatus
 from anodyne_dataset.ports import AudioProvider, DatasetRepository, ProfileRepository
 from anodyne_storage.objectstore import S3ObjectStore
@@ -97,6 +97,11 @@ class ActivityContext:
     # Text generation.
     model_registry: ModelRegistryLike | None = None
     secret_key: str = ""
+    # Graph generation: an in-process `LLMProvider` (graph generation runs in
+    # the worker, not on Ray, so it needs a provider here). Defaults None; the
+    # graph handler builds a `LiteLLMProvider` from `secret_store`/`secret_key`
+    # when unset. Tests inject a fake provider returning canned graph JSON.
+    llm_provider: LLMProvider | None = None
     # Image generation.
     image_registry: ImageConfigRegistry | None = None
     secret_store: SecretStore | None = None

@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from anodyne_core.models import ModelConfig, Role, TenantContext, User
-from anodyne_core.ports import ObjectStore
+from anodyne_core.models import (
+    LLMRequest,
+    LLMResponse,
+    ModelConfig,
+    Role,
+    TenantContext,
+    Usage,
+    User,
+)
+from anodyne_core.ports import LLMProvider, ObjectStore
 from anodyne_dataset.models import (
     DatasetSpec,
     DatasetVersion,
@@ -130,6 +139,30 @@ class _FakeObjectStore(ObjectStore):
         return []
 
 
+class _NullProvider(LLMProvider):
+    """Inert `LLMProvider` for the ontology handle (never called on non-graph paths)."""
+
+    async def complete(self, config: ModelConfig, request: LLMRequest) -> LLMResponse:
+        return LLMResponse(content="", usage=Usage())
+
+    async def _s(self) -> AsyncIterator[str]:
+        if False:
+            yield ""
+
+    def stream(self, config: ModelConfig, request: LLMRequest) -> AsyncIterator[str]:
+        return self._s()
+
+
+class _InertOntologyProposer:
+    async def propose(self, spec: Any, provider: Any, config: Any) -> Any:  # pragma: no cover
+        raise AssertionError("ontology proposer should not run on non-graph create paths")
+
+
+def _inert_ontology_handle() -> deps.OntologyProposalHandle:
+    cfg = ModelConfig(id=uuid4(), tenant_id=uuid4(), name="m", provider="gemini", model="g")
+    return deps.OntologyProposalHandle(_InertOntologyProposer(), _NullProvider(), cfg)
+
+
 class _FakeModelRegistry:
     """In-memory stand-in for `deps.ModelRegistry`, seedable per-tenant."""
 
@@ -228,6 +261,7 @@ def wired() -> tuple[AsyncClient, Any, _FakeDatasetRepository, _FakeTemporalClie
     fake_client = _FakeTemporalClient()
     app.dependency_overrides[deps.get_dataset_repo] = lambda: repo
     app.dependency_overrides[deps.get_schema_proposer] = lambda: _FakeSchemaProposer()
+    app.dependency_overrides[deps.get_ontology_proposer] = _inert_ontology_handle
     app.dependency_overrides[deps.get_temporal_client] = lambda: fake_client
     app.dependency_overrides[deps.get_object_store] = lambda: _FakeObjectStore()
     app.dependency_overrides[deps.get_redis] = lambda: _FakeRedis()

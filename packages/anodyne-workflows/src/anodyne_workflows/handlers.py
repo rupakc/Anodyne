@@ -23,8 +23,11 @@ from anodyne_audio.models import AudioManifestItem
 from anodyne_compute import remote_generate_shard, remote_generate_text_shard
 from anodyne_compute.sample_tasks import remote_generate_shard_from_generator
 from anodyne_core.models import ModelConfig
-from anodyne_core.ports import ObjectStore
+from anodyne_core.ports import LLMProvider, ObjectStore
 from anodyne_dataset.models import DatasetSpec
+from anodyne_graph.generator import LLMGraphGenerator
+from anodyne_graph.models import Edge, GraphDataset, Node, compute_metrics
+from anodyne_graph.serialization import from_json_bytes, to_json_bytes
 from anodyne_tabular.builder import build_tabular_generator
 from anodyne_tabular.io import read_sample
 from anodyne_video.generator import VideoDatasetGenerator
@@ -441,8 +444,118 @@ class VideoHandler:
         return key
 
 
+# --------------------------------------------------------------------------- #
+# Graph -- description -> ontology (proposed at create time, stored in
+# spec.directives["ontology"]) -> LLM-generated property graph. For GA the whole
+# graph is one shard (shard_rows is large); range-partitioning by node index is
+# the seam left for wave GB. Each shard serializes to node-link JSON; assemble
+# merges shards into one `GraphDataset` and uploads a single `graph_json`
+# artifact.
+# --------------------------------------------------------------------------- #
+def _graph_shard_key(inp: GenerationInput, index: int) -> str:
+    return f"datasets/{inp.dataset_id}/{inp.job_id}/graph-shard-{index}.json"
+
+
+class GraphHandler:
+    # One shard for typical GA sizes; large so `plan_shards` doesn't split the
+    # node budget. Wave GB partitions by community/node-range for huge graphs.
+    shard_rows = 1_000_000
+    artifact_format = "graph_json"
+
+    async def _resolve_model_config(
+        self, ctx: ActivityContext, inp: GenerationInput
+    ) -> ModelConfig:
+        if ctx.model_registry is None or inp.model_config_id is None:
+            raise ValueError(
+                "graph generation requires a registered model: no model_registry/"
+                "model_config_id configured for this activity context"
+            )
+        model_config = await ctx.model_registry.get(
+            uuid.UUID(inp.tenant_id), uuid.UUID(inp.model_config_id)
+        )
+        if model_config is None:
+            raise ValueError(
+                f"model config {inp.model_config_id} not found for tenant {inp.tenant_id}"
+            )
+        return model_config
+
+    def _provider(self, ctx: ActivityContext) -> LLMProvider:
+        if ctx.llm_provider is not None:
+            return ctx.llm_provider
+        # Build a real provider from the worker's secret material, exactly like
+        # the text Ray task does (the raw Fernet key never leaves the worker).
+        from anodyne_llm.adapter import LiteLLMProvider
+        from anodyne_storage.secrets import FernetSecretStore
+
+        secret_store = ctx.secret_store or FernetSecretStore(ctx.secret_key.encode())
+        return LiteLLMProvider(secret_store)
+
+    async def generate_shards(
+        self,
+        ctx: ActivityContext,
+        inp: GenerationInput,
+        spec: DatasetSpec,
+        shards: list[list[int]],
+        store: ObjectStore,
+    ) -> list[str]:
+        model_config = await self._resolve_model_config(ctx, inp)
+        generator = LLMGraphGenerator(self._provider(ctx), model_config)
+        keys: list[str] = []
+        for i, (start, count) in enumerate(shards):
+            # Graph generation is synchronous (drives its own LLM calls via
+            # asyncio.run internally), so run it off the event loop.
+            dataset = await asyncio.to_thread(generator.generate, spec, start, count, inp.seed, i)
+            key = _graph_shard_key(inp, i)
+            await store.put(key, to_json_bytes(dataset))
+            keys.append(key)
+        return keys
+
+    async def assemble(
+        self,
+        ctx: ActivityContext,
+        inp: GenerationInput,
+        spec: DatasetSpec | None,
+        keys: list[str],
+        store: ObjectStore,
+    ) -> str:
+        """Merge shard graphs into one `GraphDataset` and upload the artifact.
+
+        Nodes are deduped by id across shards; edges are deduped by
+        (type, source, target); the ontology is taken from the first shard.
+        """
+        ontology = None
+        nodes: dict[str, Node] = {}
+        edges: dict[tuple[str, str, str], Edge] = {}
+        for key in keys:
+            data = await store.get(key)
+            shard = from_json_bytes(data)
+            if ontology is None:
+                ontology = shard.ontology
+            for node in shard.nodes:
+                nodes.setdefault(node.id, node)
+            for edge in shard.edges:
+                edges.setdefault((edge.type, edge.source, edge.target), edge)
+
+        node_list = list(nodes.values())
+        edge_list = list(edges.values())
+        if ontology is None:
+            from anodyne_graph.models import GraphOntology
+
+            ontology = GraphOntology()
+        dataset = GraphDataset(
+            ontology=ontology,
+            nodes=node_list,
+            edges=edge_list,
+            metrics=compute_metrics(node_list, edge_list),
+        )
+        artifact_key = _artifact_key(inp, "json")
+        await store.put(artifact_key, to_json_bytes(dataset))
+        return artifact_key
+
+
 register_modality("tabular", TabularHandler())
 register_modality("text", TextHandler())
 register_modality("image", ImageHandler())
 register_modality("audio", AudioHandler())
 register_modality("video", VideoHandler())
+register_modality("graph", GraphHandler())

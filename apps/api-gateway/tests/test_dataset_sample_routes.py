@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from anodyne_core.models import Role, TenantContext, User
-from anodyne_core.ports import ObjectStore
+from anodyne_core.models import (
+    LLMRequest,
+    LLMResponse,
+    ModelConfig,
+    Role,
+    TenantContext,
+    Usage,
+    User,
+)
+from anodyne_core.ports import LLMProvider, ObjectStore
 from anodyne_dataset.models import DatasetSpec, GenerationJob, Modality, Profile
 from anodyne_dataset.ports import DatasetRepository, ProfileRepository, SchemaProposer
 from anodyne_generation.proposer import SchemaProposalError
@@ -89,6 +98,28 @@ class _FakeObjectStore(ObjectStore):
         return [k for k in self.objects if k.startswith(prefix)]
 
 
+class _NullProvider(LLMProvider):
+    async def complete(self, config: ModelConfig, request: LLMRequest) -> LLMResponse:
+        return LLMResponse(content="", usage=Usage())
+
+    async def _s(self) -> AsyncIterator[str]:
+        if False:
+            yield ""
+
+    def stream(self, config: ModelConfig, request: LLMRequest) -> AsyncIterator[str]:
+        return self._s()
+
+
+class _InertOntologyProposer:
+    async def propose(self, spec: Any, provider: Any, config: Any) -> Any:  # pragma: no cover
+        raise AssertionError("ontology proposer should not run on tabular create paths")
+
+
+def _inert_ontology_handle() -> deps.OntologyProposalHandle:
+    cfg = ModelConfig(id=uuid4(), tenant_id=uuid4(), name="m", provider="gemini", model="g")
+    return deps.OntologyProposalHandle(_InertOntologyProposer(), _NullProvider(), cfg)
+
+
 class _FakeHandle:
     def __init__(self, id: str) -> None:
         self.id = id
@@ -116,6 +147,7 @@ def wired() -> tuple[AsyncClient, Any, _FakeDatasetRepository, _FakeProfileRepos
     app.dependency_overrides[deps.get_profile_repo] = lambda: profile_repo
     app.dependency_overrides[deps.get_object_store] = lambda: object_store
     app.dependency_overrides[deps.get_schema_proposer] = lambda: _FailingSchemaProposer()
+    app.dependency_overrides[deps.get_ontology_proposer] = _inert_ontology_handle
     app.dependency_overrides[deps.get_sample_profiler] = lambda: PandasSampleProfiler()
     # The shared generate route resolves the LLM model registry (used only for
     # text datasets); stub it so a tabular from-sample generate doesn't build a

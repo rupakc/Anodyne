@@ -28,6 +28,7 @@ down:      ; docker compose -f infra/docker/docker-compose.yml down -v
 migrate:   ; uv run alembic -c packages/anodyne-storage/alembic.ini upgrade head
 seed:      ; uv run python -m api_gateway.seed
 test:      ; uv run pytest
+smoke:     ; uv run python scripts/live_smoke_test.py  # live E2E against a running local stack
 
 # --- Deployment (sub-system I — see docs/deployment.md) --------------------
 #

@@ -9,6 +9,14 @@ from anodyne_core.ports import LLMProvider, SecretStore
 
 __all__ = ["LiteLLMProvider", "litellm"]
 
+# Drop provider-unsupported params instead of raising. Callers pass generation
+# hints uniformly (e.g. `seed` for deterministic text generation), but not every
+# provider accepts every param -- Gemini rejects `seed`, which otherwise raises
+# litellm.UnsupportedParamsError and fails the whole call. With this flag litellm
+# drops any param a given provider doesn't support, so the same request works
+# across providers (the param simply has no effect where unsupported).
+litellm.drop_params = True
+
 
 class LiteLLMProvider(LLMProvider):
     def __init__(self, secret_store: SecretStore) -> None:

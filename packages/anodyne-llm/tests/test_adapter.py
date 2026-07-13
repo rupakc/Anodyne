@@ -57,3 +57,12 @@ async def test_complete_resolves_key_and_normalizes(monkeypatch):  # type: ignor
     assert captured["model"] == "openai/gpt-4o"
     assert captured["api_key"] == "sk-test-key"
     assert captured["messages"] == [{"role": "user", "content": "hey"}]
+
+
+def test_litellm_drops_provider_unsupported_params() -> None:
+    # Regression: Gemini (and other providers) reject params they don't support
+    # (e.g. `seed`), which raised litellm.UnsupportedParamsError and failed every
+    # text-generation shard once Gemini became the default. Importing the adapter
+    # must enable litellm's drop-unsupported-params behavior so such params are
+    # silently dropped per-provider instead of crashing the call.
+    assert adapter_mod.litellm.drop_params is True

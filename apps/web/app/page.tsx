@@ -45,7 +45,7 @@ export default function Home() {
           </Link>
           <ThemeToggle />
           <Button
-            render={<Link href="#get-started" />}
+            render={<Link href="/login" />}
             nativeButton={false}
             size="sm"
           >
@@ -76,7 +76,7 @@ export default function Home() {
             </p>
             <div className="mt-9 flex flex-wrap items-center gap-3">
               <Button
-                render={<Link href="#get-started" id="get-started" />}
+                render={<Link href="/login" />}
                 nativeButton={false}
                 size="lg"
               >

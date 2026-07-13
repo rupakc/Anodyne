@@ -6,14 +6,17 @@ sample data; injects controlled noise, drift, outliers, and bias; exports to mul
 evaluates the results with a mixture-of-experts LLM judge pipeline — with human-in-the-loop review
 throughout.
 
-> **Project status.** The **Platform Foundation + LLM Abstraction** and the **Generation Engine**
-> (all five modalities) are implemented: multi-tenant identity, storage/secrets, observability, an
-> LLM-agnostic layer, and dataset generation for **tabular (from description *and* sample), text,
-> image, audio, and video** — orchestrated by Temporal + Ray, with starter templates and
-> bias/edge-case steering, driven from a Next.js web UI. Deployment & CI/CD — Dockerfiles, a
-> build/SBOM/scan/push pipeline, and Cloud Run/GKE/on-prem manifests — is scaffolded (see
-> `docs/deployment.md`); wiring it up against a real GCP project is a follow-up. Perturbation,
-> export, evaluation, and human-in-the-loop are still on the roadmap (see below).
+> **Project status.** The platform is feature-complete across the core workflow. Implemented today:
+> **Platform Foundation + LLM Abstraction** (multi-tenant identity, storage/secrets, observability,
+> an LLM-agnostic layer); the **Generation Engine** for **tabular (from description *and* sample),
+> text, image, audio, video, and knowledge graphs** — orchestrated by Temporal + Ray, with starter
+> templates and bias/edge-case steering; **Perturbation** (noise/drift/outliers/bias, tabular, text,
+> and graph); **Export** (CSV/JSON/Parquet/Arrow, streamed, across every modality); the
+> **Evaluation Engine** (a mixture-of-experts LLM-as-a-Judge with JSON + HTML reports); and
+> **Human-in-the-Loop** review, annotation, and feedback — all driven from a Next.js web UI.
+> Deployment & CI/CD — Dockerfiles, a build/SBOM/scan/push pipeline, and Cloud Run/GKE/on-prem
+> manifests — are in place (see `docs/deployment.md`); wiring the registry push against a real GCP
+> project is the remaining follow-up. See the roadmap below for the full breakdown.
 
 ## Why Anodyne
 
@@ -126,7 +129,7 @@ exercises Postgres row-level security via testcontainers.
 - **Architecture & specs:** [`docs/architecture.md`](docs/architecture.md), `docs/superpowers/specs/`, `docs/superpowers/plans/`.
 - **Local dev runbook:** [`docs/dev-runbook.md`](docs/dev-runbook.md).
 - **Deployment & CI/CD:** [`docs/deployment.md`](docs/deployment.md) — local → on-prem → Cloud Run → GKE, and the secret-management model.
-- **Non-technical feature guides (GitHub Wiki):** source in [`docs/wiki/`](docs/wiki/) — plain-language explanations of each feature (Foundation, Bring Your Own AI Model, Multi-Tenancy & Security, Generation Engine, Local Development, Deployment). Published to the repository Wiki.
+- **Non-technical feature guides (GitHub Wiki):** source in [`docs/wiki/`](docs/wiki/) — plain-language explanations of every feature (Foundation, Bring Your Own AI Model, Multi-Tenancy & Security, Generation Engine, Graph Modality, Perturbation, Export & Storage, Evaluation Engine, Human-in-the-Loop & Annotation, Web App, Local Development, Deployment). Published to the repository Wiki.
 
 ## License
 

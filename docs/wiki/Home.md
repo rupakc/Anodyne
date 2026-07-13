@@ -23,12 +23,26 @@ countries"), and Anodyne builds a dataset to match — without using any real, s
 
 ## The bigger picture
 
-Anodyne is being built in stages. Each page below explains one piece in simple terms:
+Each page below explains one piece of Anodyne in simple terms:
 
+**Foundations**
 - **[Platform Foundation](Platform-Foundation)** — the secure, multi-company base everything sits on.
 - **[Bring Your Own AI Model](LLM-Abstraction)** — use any AI provider, or a private one on your own machines.
 - **[Multi-Tenancy & Security](Multi-Tenancy-and-Security)** — how each company's data stays private.
-- **[Generation Engine](Generation-Engine)** — how datasets get made.
-- **[Running Anodyne on Your Laptop](Local-Development)** — trying it out locally.
 
-Coming next: richer table generation from your own sample data, and text/image/audio/video datasets.
+**Generating data**
+- **[Generation Engine](Generation-Engine)** — how tabular, text, image, audio, and video datasets get made.
+- **[Graph Modality](Graph-Modality)** — generating knowledge graphs and ontologies.
+
+**Shaping & shipping**
+- **[Perturbation](Perturbation)** — deliberately roughen data to test robustness.
+- **[Export & Storage](Export-and-Storage)** — download your data in the format you want.
+
+**Judging & reviewing**
+- **[Evaluation Engine](Evaluation-Engine)** — an AI panel of judges that grades the data.
+- **[Human-in-the-Loop & Annotation](Human-in-the-Loop-and-Annotation)** — keep people in control, add labels and feedback.
+
+**Using & running it**
+- **[Web App](Web-UI)** — the browser interface that ties it all together.
+- **[Running Anodyne on Your Laptop](Local-Development)** — trying it out locally.
+- **[Deployment](Deployment)** — running Anodyne in the cloud or on-premises.

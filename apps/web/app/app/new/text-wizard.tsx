@@ -61,6 +61,7 @@ export function TextWizard({ accessToken, api: injectedApi }: TextWizardProps) {
   const [fields, setFields] = useState<FieldSpec[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [requireReview, setRequireReview] = useState(false);
 
   const canSubmit = name.trim().length > 0 && targetRows > 0;
 
@@ -108,7 +109,7 @@ export function TextWizard({ accessToken, api: injectedApi }: TextWizardProps) {
     setPending(true);
     setError(null);
     try {
-      const job = await api.generate(spec.id);
+      const job = await api.generate(spec.id, { require_review: requireReview });
       router.push(`/app/jobs/${job.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start generation. Please try again.");
@@ -221,6 +222,8 @@ export function TextWizard({ accessToken, api: injectedApi }: TextWizardProps) {
         <ConfirmStep
           spec={{ ...spec, fields }}
           pending={pending}
+          requireReview={requireReview}
+          onRequireReviewChange={setRequireReview}
           onBack={() => setStep("review")}
           onGenerate={handleGenerate}
         />

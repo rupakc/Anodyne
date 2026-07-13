@@ -6,11 +6,15 @@ import type { DatasetSpec } from "@/lib/api";
 export function ConfirmStep({
   spec,
   pending,
+  requireReview,
+  onRequireReviewChange,
   onBack,
   onGenerate,
 }: {
   spec: DatasetSpec;
   pending: boolean;
+  requireReview: boolean;
+  onRequireReviewChange: (value: boolean) => void;
   onBack: () => void;
   onGenerate: () => void;
 }) {
@@ -54,6 +58,23 @@ export function ConfirmStep({
           </li>
         ))}
       </ul>
+
+      <label className="flex items-start gap-3 rounded-xl border border-border bg-muted/40 p-4 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5 size-4 accent-terracotta"
+          checked={requireReview}
+          disabled={pending}
+          onChange={(event) => onRequireReviewChange(event.target.checked)}
+        />
+        <span>
+          <span className="font-medium">Require human review before generating</span>
+          <span className="mt-1 block text-muted-foreground text-pretty">
+            Park this job for a reviewer to approve in the reviews queue before any data is
+            generated. Off by default.
+          </span>
+        </span>
+      </label>
 
       <div className="flex justify-between">
         <Button type="button" variant="outline" onClick={onBack} disabled={pending}>

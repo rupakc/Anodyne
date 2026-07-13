@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Trash2 } from "lucide-react";
 import {
   createApiClient,
+  HTTPS_REQUIRED_MESSAGE,
+  isCredentialSubmissionInsecure,
   PROVIDER_KINDS,
   type ApiClient,
   type ProviderConfig,
@@ -218,6 +220,13 @@ function RegisterProviderForm({
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     if (!canSubmit) return;
+
+    // Never let a secret leave the browser in cleartext: block submitting an
+    // api_key when the gateway is plain http:// to a non-loopback host.
+    if (apiKey.trim() && isCredentialSubmissionInsecure()) {
+      setError(HTTPS_REQUIRED_MESSAGE);
+      return;
+    }
 
     let params: Record<string, unknown> | undefined;
     if (paramsText.trim()) {

@@ -7,8 +7,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 afterEach(cleanup);
 
 import { ProvidersManager } from "@/app/app/providers/providers-manager";
-import type { ProviderConfig, ProviderKind } from "@/lib/api";
+import { isCredentialSubmissionInsecure, type ProviderConfig, type ProviderKind } from "@/lib/api";
 import { baseMockApi } from "./mock-api";
+
+describe("isCredentialSubmissionInsecure", () => {
+  it("blocks plain http to a non-loopback host", () => {
+    expect(isCredentialSubmissionInsecure("http://gateway.example.com")).toBe(true);
+    expect(isCredentialSubmissionInsecure("http://10.0.0.5:8000")).toBe(true);
+  });
+
+  it("allows https and localhost/loopback http (local dev)", () => {
+    expect(isCredentialSubmissionInsecure("https://gateway.example.com")).toBe(false);
+    expect(isCredentialSubmissionInsecure("http://localhost:8000")).toBe(false);
+    expect(isCredentialSubmissionInsecure("http://127.0.0.1:8000")).toBe(false);
+    expect(isCredentialSubmissionInsecure("http://[::1]:8000")).toBe(false);
+  });
+});
 
 const LLM_PROVIDER: ProviderConfig = {
   id: "prov-1",

@@ -140,8 +140,30 @@ describe("create-from-description wizard", () => {
 
     await user.click(screen.getByRole("button", { name: /generate dataset/i }));
 
-    await waitFor(() => expect(api.generate).toHaveBeenCalledWith("dataset-1"));
+    // Human review is opt-in: the default generate call leaves it off.
+    await waitFor(() =>
+      expect(api.generate).toHaveBeenCalledWith("dataset-1", { require_review: false }),
+    );
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/app/jobs/job-1"));
+  });
+
+  it("passes require_review when the human-review toggle is enabled", async () => {
+    const user = userEvent.setup();
+    const api = makeMockApi();
+
+    render(<Wizard api={api} />);
+
+    await fillDescribeStep(user);
+    await screen.findByRole("heading", { name: /review the proposed schema/i });
+    await user.click(screen.getByRole("button", { name: /save & continue/i }));
+
+    await screen.findByRole("heading", { name: /confirm & generate/i });
+    await user.click(screen.getByRole("checkbox", { name: /require human review/i }));
+    await user.click(screen.getByRole("button", { name: /generate dataset/i }));
+
+    await waitFor(() =>
+      expect(api.generate).toHaveBeenCalledWith("dataset-1", { require_review: true }),
+    );
   });
 
   it("supports going back from review to describe without losing the proposal", async () => {

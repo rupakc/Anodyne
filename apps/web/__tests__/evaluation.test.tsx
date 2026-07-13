@@ -108,6 +108,27 @@ describe("EvaluationView", () => {
     openSpy.mockRestore();
   });
 
+  it("retries a not-yet-ready report fetch and renders it once it lands", async () => {
+    const getEvaluationReport = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("report not ready"))
+      .mockResolvedValue(REPORT);
+    const api = baseMockApi({
+      getEvaluation: vi.fn().mockResolvedValue(SUCCEEDED),
+      getEvaluationReport,
+    });
+
+    render(<EvaluationView evaluationId="eval-1" api={api} pollIntervalMs={20} />);
+
+    // First attempt fails -> friendly retry message, not a dead end.
+    expect(await screen.findByText(/retrying…/i)).toBeInTheDocument();
+    // A later poll retries and the report renders.
+    expect(
+      await screen.findByText("The synthetic data closely matches the reference distribution."),
+    ).toBeInTheDocument();
+    expect(getEvaluationReport.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("surfaces a failed run", async () => {
     const api = baseMockApi({
       getEvaluation: vi.fn().mockResolvedValue({ ...RUNNING, status: "failed", message: "judge crashed" }),

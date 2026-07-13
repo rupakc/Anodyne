@@ -20,8 +20,6 @@ const STATUS_LABEL: Record<JobStatus, string> = {
   failed: "Failed",
 };
 
-const TERMINAL: readonly JobStatus[] = ["succeeded", "failed"];
-
 export interface EvaluationViewProps {
   evaluationId: string;
   accessToken?: string;
@@ -49,18 +47,38 @@ export function EvaluationView({
   const [downloading, setDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
   const reportFetched = useRef(false);
+  const reportInFlight = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
+    reportFetched.current = false;
+    reportInFlight.current = false;
 
+    // Fetch the report, retrying on the next poll if it fails: the report can
+    // lag a succeeded run by a beat (the artifact is still being written), so a
+    // single attempt would leave the user stuck on "Assembling…". We keep the
+    // poll interval alive until the report actually lands, then stop cleanly.
     async function fetchReport() {
-      if (reportFetched.current) return;
-      reportFetched.current = true;
+      if (reportFetched.current || reportInFlight.current) return;
+      reportInFlight.current = true;
       try {
         const r = await api.getEvaluationReport(evaluationId);
-        if (!cancelled) setReport(r);
+        if (cancelled) return;
+        reportFetched.current = true;
+        setReport(r);
+        setError(null);
+        clearInterval(timer);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load the report.");
+        // Transient: leave `reportFetched` false so the next poll retries.
+        if (!cancelled) {
+          setError(
+            err instanceof Error && err.message
+              ? `${err.message} — retrying…`
+              : "Couldn't load the report yet — retrying…",
+          );
+        }
+      } finally {
+        reportInFlight.current = false;
       }
     }
 
@@ -69,9 +87,12 @@ export function EvaluationView({
         const next = await api.getEvaluation(evaluationId);
         if (cancelled) return;
         setRun(next);
-        if (TERMINAL.includes(next.status)) {
-          if (timer) clearInterval(timer);
-          if (next.status === "succeeded") void fetchReport();
+        if (next.status === "failed") {
+          clearInterval(timer);
+        } else if (next.status === "succeeded") {
+          // Keep polling until the report is in hand; `fetchReport` clears the
+          // interval on success. Terminal states other than success stop above.
+          void fetchReport();
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load the evaluation.");

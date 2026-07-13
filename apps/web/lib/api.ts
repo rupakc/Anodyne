@@ -124,6 +124,12 @@ export interface GenerateOptions {
   seed?: number;
   /** Optional provider override (`model_config_id`) for LLM-backed modalities. */
   model_config_id?: string;
+  /**
+   * Opt into a human-review gate before generation runs. When true the gateway
+   * parks the workflow and creates a pending review task (see `/app/reviews`);
+   * defaults to false (auto-approve, the historical behavior).
+   */
+  require_review?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -369,6 +375,30 @@ export interface FeedbackInput {
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "http://localhost:8000";
 
+/** Message shown when a credential submission is blocked for being cleartext. */
+export const HTTPS_REQUIRED_MESSAGE =
+  "HTTPS required to submit credentials. Configure the gateway (NEXT_PUBLIC_API_BASE) to use https, or connect over localhost for local development.";
+
+/**
+ * Whether submitting a secret (e.g. a provider `api_key`) to `baseUrl` would
+ * send it in cleartext. `http://` is only safe to a loopback host
+ * (localhost / 127.0.0.1 / [::1]) for local dev; any other `http://` host must
+ * be blocked so credentials never traverse the network unencrypted. `https`
+ * (and a malformed/relative base, which stays same-origin) is always allowed.
+ */
+export function isCredentialSubmissionInsecure(baseUrl: string = API_BASE): boolean {
+  let url: URL;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:") return false;
+  const host = url.hostname.toLowerCase();
+  const loopback = host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "[::1]";
+  return !loopback;
+}
+
 /**
  * Base URL for the live job-progress socket (`WS /jobs/{id}/stream`). Reads
  * `NEXT_PUBLIC_WS_BASE` (public, non-secret — see docs/dev-runbook.md) and
@@ -501,7 +531,10 @@ export function createApiClient(accessToken: string | undefined, baseUrl: string
     generate: (id, opts) =>
       request<GenerationJob>(`/datasets/${id}/generate`, {
         method: "POST",
-        body: JSON.stringify({ seed: opts?.seed ?? 0 }),
+        body: JSON.stringify({
+          seed: opts?.seed ?? 0,
+          ...(opts?.require_review ? { require_review: true } : {}),
+        }),
       }),
     getJob: (id) => request<GenerationJob>(`/jobs/${id}`),
     listVersions: (id) => request<DatasetVersion[]>(`/datasets/${id}/versions`),

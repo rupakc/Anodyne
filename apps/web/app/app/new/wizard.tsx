@@ -50,6 +50,7 @@ export function Wizard({ accessToken, api: injectedApi }: WizardProps) {
   const [fields, setFields] = useState<FieldSpec[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [requireReview, setRequireReview] = useState(false);
 
   async function handleDescribe(input: { name: string; description: string; target_rows: number }) {
     setPending(true);
@@ -99,7 +100,7 @@ export function Wizard({ accessToken, api: injectedApi }: WizardProps) {
     setPending(true);
     setError(null);
     try {
-      const job = await api.generate(spec.id);
+      const job = await api.generate(spec.id, { require_review: requireReview });
       router.push(`/app/jobs/${job.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to start generation. Please try again.");
@@ -174,6 +175,8 @@ export function Wizard({ accessToken, api: injectedApi }: WizardProps) {
         <ConfirmStep
           spec={{ ...spec, fields }}
           pending={pending}
+          requireReview={requireReview}
+          onRequireReviewChange={setRequireReview}
           onBack={() => setStep("review")}
           onGenerate={handleGenerate}
         />

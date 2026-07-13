@@ -119,7 +119,7 @@ exercises Postgres row-level security via testcontainers.
 | G | Human-in-the-loop & Annotation — review queue, annotations, feedback, opt-in review gate | ✅ done |
 | H | Web UI — full autumn-pastel app across all modalities + perturbation/export/evaluation/HITL | ✅ done |
 | I | Deployment & CI/CD (GCP + on-prem) | ✅ Dockerfiles, CI/CD (build+SBOM+Trivy+WIF push), Cloud Run/GKE manifests, Terraform skeleton — see [`docs/deployment.md`](docs/deployment.md) |
-| Graph | Knowledge-graph / ontology modality — hybrid networkx-topology + LLM-semantics generation, ontology-constrained, RDF/OWL + property-graph + GNN export, graph MoE judges, interactive explorer | ✅ Wave 1 (GA–GE); ontology mapping + GraphRAG fixtures + graph perturbations are Wave 2 — see [`docs/superpowers/specs/2026-07-13-graph-modality-design.md`](docs/superpowers/specs/2026-07-13-graph-modality-design.md) |
+| Graph | Knowledge-graph / ontology modality — hybrid networkx-topology + LLM-semantics generation, ontology-constrained, RDF/OWL + property-graph + GNN export, graph MoE judges, interactive explorer | ✅ Wave 1 (GA–GE) + Wave 2 (GF ontology mapping/alignment + SSSOM + HITL, GG GraphRAG multi-hop QA fixtures, GH graph perturbations) — see [`docs/superpowers/specs/2026-07-13-graph-modality-design.md`](docs/superpowers/specs/2026-07-13-graph-modality-design.md) |
 
 ## Documentation
 

@@ -21,6 +21,7 @@ from anodyne_dataset.ports import (
     SchemaProposer,
 )
 from anodyne_generation.proposer import SchemaProposalError
+from anodyne_graph.errors import OntologyProposalError
 from anodyne_hitl.models import ReviewKind, ReviewTask
 from anodyne_hitl.ports import ReviewRepository
 from anodyne_observability.logging import bind_request_context, configure_logging
@@ -370,7 +371,36 @@ def create_app() -> FastAPI:
         ctx: TenantContext = Depends(deps.require("datasets:write")),
         repo: DatasetRepository = Depends(deps.get_dataset_repo),
         proposer: SchemaProposer = Depends(deps.get_schema_proposer),
+        ontology_proposer: deps.OntologyProposalHandle = Depends(deps.get_ontology_proposer),
     ) -> dict[str, object]:
+        if body.modality == Modality.GRAPH:
+            # Graph: propose a property-graph ontology (the T-Box) from the
+            # description and stash it in directives["ontology"] -- no schema
+            # fields, no DB table. Generation reads it back at generate time.
+            spec = DatasetSpec(
+                id=uuid4(),
+                tenant_id=ctx.tenant_id,
+                name=body.name,
+                description=body.description,
+                modality=Modality.GRAPH,
+                source="description",
+                fields=[],
+                target_rows=body.target_rows,
+            )
+            try:
+                ontology = await ontology_proposer.proposer.propose(
+                    spec, ontology_proposer.provider, ontology_proposer.config
+                )
+            except OntologyProposalError as exc:
+                raise HTTPException(400, f"could not propose an ontology: {exc}") from exc
+            if not ontology.node_types:
+                raise HTTPException(
+                    400, "proposed ontology has no node types; provide a more specific description"
+                )
+            spec.directives = {"ontology": ontology.model_dump(mode="json")}
+            await repo.create_spec(spec)
+            return spec.model_dump(mode="json")
+
         if body.source == "sample":
             # No description to propose a schema from -- the schema comes from
             # POST /datasets/{id}/sample once a sample is uploaded and profiled.
@@ -596,9 +626,9 @@ def create_app() -> FastAPI:
             raise HTTPException(400, "dataset has no fields; edit the schema before generating")
 
         model_config_id: str | None = None
-        if spec.modality == Modality.TEXT:
-            # Text generation calls the tenant's registered LLM, so a model
-            # must be resolved before starting the workflow: an explicit
+        if spec.modality in (Modality.TEXT, Modality.GRAPH):
+            # Text and graph generation call the tenant's registered LLM, so a
+            # model must be resolved before starting the workflow: an explicit
             # `model_config_id` (validated as the tenant's own), else the
             # tenant's first registered model (mirrors `get_schema_proposer`'s
             # existing default-model choice).

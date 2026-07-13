@@ -4,7 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = ["anodyne-dataset", "anodyne-storage", "anodyne-compute", "anodyne-core",
                 "anodyne-tabular", "anodyne-audio", "anodyne-image", "anodyne-video",
-                "anodyne-perturbation", "anodyne-evaluation",
+                "anodyne-perturbation", "anodyne-evaluation", "anodyne-graph", "anodyne-llm",
                 "temporalio>=1.7", "ray>=2.35", "pyarrow>=17"]
 
 [build-system]
@@ -22,3 +22,5 @@ anodyne-image = { workspace = true }
 anodyne-video = { workspace = true }
 anodyne-perturbation = { workspace = true }
 anodyne-evaluation = { workspace = true }
+anodyne-graph = { workspace = true }
+anodyne-llm = { workspace = true }

@@ -26,6 +26,7 @@ members = [
     "anodyne-evaluation",
     "anodyne-export",
     "anodyne-generation",
+    "anodyne-graph",
     "anodyne-hitl",
     "anodyne-image",
     "anodyne-llm",
@@ -211,6 +212,7 @@ dev = [
     { name = "anodyne-evaluation" },
     { name = "anodyne-export" },
     { name = "anodyne-generation" },
+    { name = "anodyne-graph" },
     { name = "anodyne-hitl" },
     { name = "anodyne-image" },
     { name = "anodyne-llm" },
@@ -246,6 +248,7 @@ dev = [
     { name = "anodyne-evaluation", editable = "packages/anodyne-evaluation" },
     { name = "anodyne-export", editable = "packages/anodyne-export" },
     { name = "anodyne-generation", editable = "packages/anodyne-generation" },
+    { name = "anodyne-graph", editable = "packages/anodyne-graph" },
     { name = "anodyne-hitl", editable = "packages/anodyne-hitl" },
     { name = "anodyne-image", editable = "packages/anodyne-image" },
     { name = "anodyne-llm", editable = "packages/anodyne-llm" },
@@ -417,6 +420,25 @@ requires-dist = [
     { name = "faker", specifier = ">=30" },
     { name = "numpy", specifier = ">=2" },
     { name = "pyarrow", specifier = ">=17" },
+]
+
+[[package]]
+name = "anodyne-graph"
+version = "0.1.0"
+source = { editable = "packages/anodyne-graph" }
+dependencies = [
+    { name = "anodyne-core" },
+    { name = "anodyne-dataset" },
+    { name = "faker" },
+    { name = "numpy" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "anodyne-core", editable = "packages/anodyne-core" },
+    { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
+    { name = "faker", specifier = ">=30" },
+    { name = "numpy", specifier = ">=2" },
 ]
 
 [[package]]
@@ -664,7 +686,9 @@ dependencies = [
     { name = "anodyne-core" },
     { name = "anodyne-dataset" },
     { name = "anodyne-evaluation" },
+    { name = "anodyne-graph" },
     { name = "anodyne-image" },
+    { name = "anodyne-llm" },
     { name = "anodyne-perturbation" },
     { name = "anodyne-storage" },
     { name = "anodyne-tabular" },
@@ -681,7 +705,9 @@ requires-dist = [
     { name = "anodyne-core", editable = "packages/anodyne-core" },
     { name = "anodyne-dataset", editable = "packages/anodyne-dataset" },
     { name = "anodyne-evaluation", editable = "packages/anodyne-evaluation" },
+    { name = "anodyne-graph", editable = "packages/anodyne-graph" },
     { name = "anodyne-image", editable = "packages/anodyne-image" },
+    { name = "anodyne-llm", editable = "packages/anodyne-llm" },
     { name = "anodyne-perturbation", editable = "packages/anodyne-perturbation" },
     { name = "anodyne-storage", editable = "packages/anodyne-storage" },
     { name = "anodyne-tabular", editable = "packages/anodyne-tabular" },
@@ -715,6 +741,7 @@ dependencies = [
     { name = "anodyne-evaluation" },
     { name = "anodyne-export" },
     { name = "anodyne-generation" },
+    { name = "anodyne-graph" },
     { name = "anodyne-hitl" },
     { name = "anodyne-image" },
     { name = "anodyne-llm" },
@@ -742,6 +769,7 @@ requires-dist = [
     { name = "anodyne-evaluation", editable = "packages/anodyne-evaluation" },
     { name = "anodyne-export", editable = "packages/anodyne-export" },
     { name = "anodyne-generation", editable = "packages/anodyne-generation" },
+    { name = "anodyne-graph", editable = "packages/anodyne-graph" },
     { name = "anodyne-hitl", editable = "packages/anodyne-hitl" },
     { name = "anodyne-image", editable = "packages/anodyne-image" },
     { name = "anodyne-llm", editable = "packages/anodyne-llm" },

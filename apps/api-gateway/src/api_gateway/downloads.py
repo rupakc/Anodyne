@@ -21,6 +21,8 @@ _FORMAT_MEDIA_TYPES: dict[str, tuple[str, str]] = {
     "csv": ("text/csv", "csv"),
     "json": ("application/json", "jsonl"),
     "jsonl": ("application/x-ndjson", "jsonl"),
+    # Graph modality: node-link JSON (see anodyne_graph.serialization).
+    "graph_json": ("application/json", "json"),
 }
 
 _DEFAULT_MEDIA_TYPE = "application/octet-stream"

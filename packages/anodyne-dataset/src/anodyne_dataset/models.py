@@ -13,6 +13,7 @@ class Modality(StrEnum):
     IMAGE = "image"
     AUDIO = "audio"
     VIDEO = "video"
+    GRAPH = "graph"
 
 
 class SemanticType(StrEnum):

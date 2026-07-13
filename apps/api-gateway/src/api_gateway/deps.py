@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any, Protocol, cast
 from uuid import UUID
@@ -24,6 +25,8 @@ from anodyne_evaluation.ports import EvaluationRepository
 from anodyne_evaluation.registry import SqlEvaluationRepository
 from anodyne_export.exporter import PyArrowExporter
 from anodyne_generation.proposer import LLMSchemaProposer
+from anodyne_graph.ontology import LLMOntologyProposer
+from anodyne_graph.ports import OntologyProposer
 from anodyne_hitl.ports import AnnotationRepository, FeedbackRepository, ReviewRepository
 from anodyne_hitl.registry import (
     SqlAnnotationRepository,
@@ -312,6 +315,37 @@ async def get_schema_proposer(
     if not configs:
         raise HTTPException(400, "no model configured for this tenant; register one first")
     return LLMSchemaProposer(provider, pick_default_model(configs, settings.default_llm_provider))
+
+
+@dataclass(frozen=True)
+class OntologyProposalHandle:
+    """Bundle the gateway hands to the graph create path: a stateless
+    `OntologyProposer` plus the tenant's resolved `LLMProvider` + default
+    `ModelConfig` (the port takes provider+config per call). Returned by
+    `get_ontology_proposer`; overridden wholesale in tests."""
+
+    proposer: OntologyProposer
+    provider: LLMProvider
+    config: ModelConfig
+
+
+async def get_ontology_proposer(
+    ctx: TenantContext = Depends(get_tenant_context),
+    provider: LLMProvider = Depends(get_llm_provider),
+    registry: ModelRegistry = Depends(get_model_registry),
+    settings: Settings = Depends(get_settings),
+) -> OntologyProposalHandle:
+    """Real, LLM-backed graph `OntologyProposer` + resolved provider/model.
+
+    Mirrors `get_schema_proposer`: picks the tenant's default configured
+    `ModelConfig` (Gemini by default, see `pick_default_model`). Overridden in
+    tests via `app.dependency_overrides[get_ontology_proposer]`.
+    """
+    configs = await registry.list(ctx.tenant_id)
+    if not configs:
+        raise HTTPException(400, "no model configured for this tenant; register one first")
+    config = pick_default_model(configs, settings.default_llm_provider)
+    return OntologyProposalHandle(LLMOntologyProposer(), provider, config)
 
 
 _temporal_client: Client | None = None

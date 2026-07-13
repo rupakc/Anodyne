@@ -25,6 +25,7 @@ from anodyne_evaluation.ports import EvaluationRepository
 from anodyne_evaluation.registry import SqlEvaluationRepository
 from anodyne_export.exporter import PyArrowExporter
 from anodyne_generation.proposer import LLMSchemaProposer
+from anodyne_graph.export import GraphExporter
 from anodyne_graph.ontology import LLMOntologyProposer
 from anodyne_graph.ports import OntologyProposer
 from anodyne_hitl.ports import AnnotationRepository, FeedbackRepository, ReviewRepository
@@ -206,6 +207,17 @@ def get_exporter() -> Exporter:
     Overridden in tests via `app.dependency_overrides[get_exporter]`.
     """
     return PyArrowExporter()
+
+
+def get_graph_exporter() -> Exporter:
+    """Real `GraphExporter` for `graph_json` dataset versions (sub-system GC).
+
+    `export_routes.export_version` dispatches to this exporter instead of
+    `get_exporter`'s `PyArrowExporter` whenever the version's artifact format
+    is `graph_json`. Overridden in tests via
+    `app.dependency_overrides[get_graph_exporter]`.
+    """
+    return GraphExporter()
 
 
 def get_perturbation_repo(settings: Settings = Depends(get_settings)) -> PerturbationRepository:

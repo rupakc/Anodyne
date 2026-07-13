@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Download, FileDown, GitBranch, Gauge, Tags } from "lucide-react";
+import { Download, FileDown, GitBranch, Gauge, Tags, Share2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ErrorAlert, Loading, SectionHeading } from "@/components/ui/feedback";
 import { FeedbackWidget } from "@/components/feedback-widget";
@@ -11,8 +11,12 @@ import {
   type ApiClient,
   type DatasetSpec,
   type DatasetVersion,
+  type GraphArtifact,
+  type GraphOntology,
   type PerturbationJob,
 } from "@/lib/api";
+import { OntologyView } from "@/components/ontology-view";
+import { GraphExplorer } from "@/components/graph-explorer";
 import { ExportPanel } from "./export-panel";
 import { PerturbPanel } from "./perturb-panel";
 import { EvaluatePanel } from "./evaluate-panel";
@@ -27,7 +31,21 @@ export interface DatasetVersionsProps {
 }
 
 type LoadState = "loading" | "ready" | "error";
-type PanelKey = "export" | "perturb" | "evaluate" | "annotate";
+type PanelKey = "export" | "perturb" | "evaluate" | "annotate" | "visualize";
+
+/**
+ * Above this many graph elements (nodes + edges — the version `row_count`) we
+ * refuse to fetch and parse the full node-link JSON in the browser: a large
+ * artifact would OOM the tab before it ever reached the explorer's 120-node
+ * sampler. Below it, the artifact is small enough to fetch and render.
+ */
+const GRAPH_VISUALIZE_MAX_ELEMENTS = 5_000;
+
+/** Reads the proposed ontology from a graph dataset's directives, tolerating shape drift. */
+function ontologyOf(spec: DatasetSpec | null): GraphOntology | null {
+  const raw = (spec?.directives as { ontology?: GraphOntology } | undefined)?.ontology;
+  return raw && Array.isArray(raw.node_types) ? raw : null;
+}
 
 /**
  * Dataset detail: name/description, a feedback control, every generated
@@ -101,6 +119,8 @@ export function DatasetVersions({ datasetId, accessToken, api: injectedApi }: Da
   if (state === "error") return <ErrorAlert>{error}</ErrorAlert>;
 
   const fieldNames = dataset?.fields.map((f) => f.name) ?? [];
+  const isGraph = dataset?.modality === "graph";
+  const ontology = isGraph ? ontologyOf(dataset) : null;
 
   return (
     <div className="flex flex-col gap-8">
@@ -109,6 +129,15 @@ export function DatasetVersions({ datasetId, accessToken, api: injectedApi }: Da
       <FeedbackWidget targetType="dataset" targetId={datasetId} accessToken={accessToken} api={injectedApi} />
 
       {downloadError ? <ErrorAlert>{downloadError}</ErrorAlert> : null}
+
+      {isGraph && ontology ? (
+        <div>
+          <h2 className="mb-3 font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight">
+            Ontology
+          </h2>
+          <OntologyView ontology={ontology} />
+        </div>
+      ) : null}
 
       <div>
         <h2 className="mb-3 font-[family-name:var(--font-display)] text-lg font-semibold tracking-tight">
@@ -145,6 +174,11 @@ export function DatasetVersions({ datasetId, accessToken, api: injectedApi }: Da
                   </div>
 
                   <div className="mt-3 flex flex-wrap gap-2 border-t border-border pt-3">
+                    {isGraph ? (
+                      <ActionButton active={open === "visualize"} onClick={() => togglePanel(v.id, "visualize")} icon={Share2}>
+                        Visualize
+                      </ActionButton>
+                    ) : null}
                     <ActionButton active={open === "export"} onClick={() => togglePanel(v.id, "export")} icon={FileDown}>
                       Export
                     </ActionButton>
@@ -161,8 +195,22 @@ export function DatasetVersions({ datasetId, accessToken, api: injectedApi }: Da
 
                   {open ? (
                     <div className="mt-4 rounded-xl border border-border bg-muted/30 p-4">
+                      {open === "visualize" ? (
+                        <VisualizePanel
+                          api={api}
+                          datasetId={datasetId}
+                          versionId={v.id}
+                          rowCount={v.row_count}
+                        />
+                      ) : null}
                       {open === "export" ? (
-                        <ExportPanel api={api} datasetId={datasetId} versionId={v.id} rowCount={v.row_count} />
+                        <ExportPanel
+                          api={api}
+                          datasetId={datasetId}
+                          versionId={v.id}
+                          rowCount={v.row_count}
+                          modality={dataset?.modality}
+                        />
                       ) : null}
                       {open === "perturb" ? (
                         <PerturbPanel api={api} datasetId={datasetId} versionId={v.id} fieldNames={fieldNames} />
@@ -214,6 +262,83 @@ export function DatasetVersions({ datasetId, accessToken, api: injectedApi }: Da
       ) : null}
     </div>
   );
+}
+
+/**
+ * Loads a graph version's node-link artifact and hands it to the
+ * {@link GraphExplorer}. The artifact fetch is best-effort — a version that
+ * is not a graph (or a route that has not landed) surfaces a friendly note
+ * rather than an error.
+ *
+ * Guard rail: a version whose element count (`row_count` = nodes + edges)
+ * exceeds {@link GRAPH_VISUALIZE_MAX_ELEMENTS} is *never* fetched — parsing a
+ * huge node-link JSON client-side would OOM the tab. Instead we show the
+ * aggregate size and point the user at the download.
+ */
+function VisualizePanel({
+  api,
+  datasetId,
+  versionId,
+  rowCount,
+}: {
+  api: ApiClient;
+  datasetId: string;
+  versionId: string;
+  rowCount: number;
+}) {
+  const [artifact, setArtifact] = useState<GraphArtifact | null>(null);
+  const [state, setState] = useState<"loading" | "ready" | "error">("loading");
+  const [message, setMessage] = useState<string | null>(null);
+  const tooLarge = rowCount > GRAPH_VISUALIZE_MAX_ELEMENTS;
+
+  useEffect(() => {
+    if (tooLarge) return;
+    let cancelled = false;
+    api.fetchGraphArtifact(datasetId, versionId).then(
+      (data) => {
+        if (cancelled) return;
+        if (data && Array.isArray(data.nodes)) {
+          setArtifact(data);
+          setState("ready");
+        } else {
+          setMessage("This version does not contain a graph artifact.");
+          setState("error");
+        }
+      },
+      (err) => {
+        if (cancelled) return;
+        setMessage(
+          err instanceof Error ? err.message : "Could not load the graph for this version.",
+        );
+        setState("error");
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [api, datasetId, versionId, tooLarge]);
+
+  if (tooLarge)
+    return (
+      <div className="flex flex-col gap-2 text-sm">
+        <p className="font-medium text-foreground">
+          Graph too large to visualize in-browser ({rowCount.toLocaleString()} elements).
+        </p>
+        <p className="text-muted-foreground">
+          Rendering this many nodes and edges in the browser is not supported — download the
+          version to inspect it in a desktop graph tool.
+        </p>
+      </div>
+    );
+
+  if (state === "loading") return <Loading label="Loading graph…" />;
+  if (state === "error" || !artifact)
+    return (
+      <p className="text-sm text-muted-foreground">
+        {message ?? "No graph to display."}
+      </p>
+    );
+  return <GraphExplorer graph={artifact} />;
 }
 
 function ActionButton({

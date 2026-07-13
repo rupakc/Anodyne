@@ -68,10 +68,7 @@ def _node_desc(nt: NodeType) -> str:
 
 def _edge_desc(et: EdgeType) -> str:
     props = ", ".join(sorted(p.name for p in et.properties))
-    return (
-        f"relation from {et.source_type} to {et.target_type}; "
-        f"properties: {props or '(none)'}"
-    )
+    return f"relation from {et.source_type} to {et.target_type}; properties: {props or '(none)'}"
 
 
 def _predicate_for_score(score: float) -> MappingRelation:

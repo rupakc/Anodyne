@@ -8,7 +8,7 @@ from anodyne_core.models import LLMRequest, LLMResponse, ModelConfig, Usage
 from anodyne_core.ports import LLMProvider
 from anodyne_graph.mapping.aligner import AlignmentThresholds, OntologyAligner
 from anodyne_graph.mapping.matchers import EmbeddingMatcher, LexicalMatcher, LLMMatcher
-from anodyne_graph.mapping.models import MappingRelation
+from anodyne_graph.mapping.models import MappingRelation, MappingSet
 from anodyne_graph.models import EdgeType, GraphOntology, NodeType, PropertySpec
 
 _CFG = ModelConfig(id=uuid4(), tenant_id=uuid4(), name="m", provider="fake", model="f")
@@ -59,8 +59,8 @@ def _target() -> GraphOntology:
 _THRESHOLDS = AlignmentThresholds(auto_accept=0.9, review_floor=0.4, prefilter_floor=0.3)
 
 
-async def _align(**kw: object) -> object:
-    aligner = OntologyAligner(LexicalMatcher(), thresholds=_THRESHOLDS, **kw)  # type: ignore[arg-type]
+async def _align() -> MappingSet:
+    aligner = OntologyAligner(LexicalMatcher(), thresholds=_THRESHOLDS)
     return await aligner.align(_source(), _target(), source_id="src", target_id="tgt")
 
 

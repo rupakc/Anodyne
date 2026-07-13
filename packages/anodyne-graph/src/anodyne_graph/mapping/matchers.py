@@ -186,7 +186,7 @@ def _parse_judgement(content: str) -> LLMJudgement:
     if not isinstance(data, dict):
         return fallback
     try:
-        predicate = MappingRelation(data.get("predicate"))
+        predicate = MappingRelation(str(data.get("predicate")))
     except ValueError:
         predicate = MappingRelation.RELATED_MATCH
     try:

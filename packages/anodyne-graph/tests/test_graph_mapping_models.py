@@ -4,11 +4,11 @@ from anodyne_graph.mapping.models import Mapping, MappingRelation, MappingSet
 
 
 def test_mapping_relation_values_match_skos_predicates() -> None:
-    assert MappingRelation.EXACT_MATCH == "exact_match"
-    assert MappingRelation.CLOSE_MATCH == "close_match"
-    assert MappingRelation.BROAD_MATCH == "broad_match"
-    assert MappingRelation.NARROW_MATCH == "narrow_match"
-    assert MappingRelation.RELATED_MATCH == "related_match"
+    assert MappingRelation.EXACT_MATCH.value == "exact_match"
+    assert MappingRelation.CLOSE_MATCH.value == "close_match"
+    assert MappingRelation.BROAD_MATCH.value == "broad_match"
+    assert MappingRelation.NARROW_MATCH.value == "narrow_match"
+    assert MappingRelation.RELATED_MATCH.value == "related_match"
     assert {r.value for r in MappingRelation} == {
         "exact_match",
         "close_match",

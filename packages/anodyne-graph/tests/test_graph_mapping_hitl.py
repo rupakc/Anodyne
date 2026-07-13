@@ -43,8 +43,7 @@ def _set(*needs_review_subjects: str) -> MappingSet:
     return MappingSet(
         source_ontology_id="s",
         target_ontology_id="t",
-        mappings=[_mapping(True, s) for s in needs_review_subjects]
-        + [_mapping(False, "Accepted")],
+        mappings=[_mapping(True, s) for s in needs_review_subjects] + [_mapping(False, "Accepted")],
     )
 
 
@@ -73,9 +72,7 @@ async def test_route_to_review_persists_single_task_via_repo() -> None:
     repo = _FakeReviewRepo()
     tenant = uuid4()
     artifact = uuid4()
-    task = await route_to_review(
-        _set("Org", "Loc"), repo, tenant_id=tenant, artifact_id=artifact
-    )
+    task = await route_to_review(_set("Org", "Loc"), repo, tenant_id=tenant, artifact_id=artifact)
     assert task is not None
     # One task per mapping-set (the lighter option), not one per flagged mapping.
     assert len(repo.created) == 1

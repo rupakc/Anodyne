@@ -37,10 +37,12 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from temporalio.client import Client
 
 from api_gateway import deps
+from api_gateway.config import get_settings
 from api_gateway.deps import ModelRegistry, RedisLike
 from api_gateway.evaluation_routes import build_router as build_evaluation_router
 from api_gateway.export_routes import router as export_router
@@ -155,6 +157,16 @@ class RegisterVideoProviderRequest(BaseModel):
 def create_app() -> FastAPI:
     configure_logging()
     app = FastAPI(title="Anodyne API Gateway")
+
+    _cors_origins = [o.strip() for o in get_settings().cors_allow_origins.split(",") if o.strip()]
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
     app.include_router(export_router)
     app.include_router(perturbation_router)
 

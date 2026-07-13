@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     s3_bucket: str = "anodyne"
     temporal_address: str = "localhost:7233"
     redis_url: str = "redis://localhost:6379/0"
+    # Comma-separated browser origins allowed to call the API (CORS). The web
+    # app runs on a different origin than the gateway, so its origin must be
+    # listed or the browser blocks every authenticated request as a CORS
+    # failure ("Failed to fetch"). Defaults cover local dev; set explicitly
+    # (e.g. the deployed web origin) in other environments.
+    cors_allow_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
 
 
 def get_settings() -> Settings:

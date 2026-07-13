@@ -25,6 +25,10 @@ class ReviewKind(StrEnum):
     SCHEMA_APPROVAL = "schema_approval"
     DATASET_REVIEW = "dataset_review"
     EVALUATION_REVIEW = "evaluation_review"
+    # Human accept/reject of low-confidence ontology-alignment mappings (Track
+    # GF). Stored as a string in `review_tasks.kind` (no DB enum/CHECK), so this
+    # is an additive change needing no migration.
+    MAPPING_REVIEW = "mapping_review"
 
 
 class ReviewStatus(StrEnum):

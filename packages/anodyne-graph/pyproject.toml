@@ -5,6 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     "anodyne-core",
     "anodyne-dataset",
+    "anodyne-hitl",
     "numpy>=2",
     "faker>=30",
     "rdflib>=7.6.0",
@@ -20,3 +21,4 @@ build-backend = "hatchling.build"
 [tool.uv.sources]
 anodyne-core = { workspace = true }
 anodyne-dataset = { workspace = true }
+anodyne-hitl = { workspace = true }

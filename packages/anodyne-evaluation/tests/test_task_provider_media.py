@@ -185,8 +185,9 @@ def _audio_cls_frame() -> pd.DataFrame:
 
 async def test_audio_classification_provider_scores_all_metrics(model_cfg: ModelConfig) -> None:
     # Single fake payload carries both the "consistent" array (for
-    # transcript_label_consistency) and "transcript_quality" (for the rubric) --
-    # each oracle call only reads the key it parses.
+    # transcript_label_consistency) and "transcript_quality" (for the rubric) -- both
+    # LLM metrics are folded into ONE combined call/response (see media.py's
+    # `_AudioBase._oracle`), so this single payload satisfies both parses.
     llm = _FixedFakeProvider({"consistent": [True, False, True, True], "transcript_quality": 4})
     ctx = EvaluationContext(
         subject=_audio_cls_frame(), task_type=TaskType.AUDIO_CLASSIFICATION, sample_rows=4
@@ -200,8 +201,42 @@ async def test_audio_classification_provider_scores_all_metrics(model_cfg: Model
     assert score.metrics["transcript_quality"] == pytest.approx(0.8)
     expected_score = sum(score.metrics[k] for k in _AUDIO_CLS_ALL) / len(_AUDIO_CLS_ALL)
     assert score.score == pytest.approx(expected_score)
-    assert len(llm.calls) == 2  # one call per LLM metric, both temperature=0
+    assert len(llm.calls) == 1  # both LLM metrics are folded into a single call
     assert all(c.params.get("temperature") == 0 for c in llm.calls)
+
+
+async def test_audio_classification_provider_single_metric_makes_one_call(
+    model_cfg: ModelConfig,
+) -> None:
+    # Only transcript_label_consistency selected -> exactly one call, and the payload
+    # need not carry "transcript_quality" at all (lenient: only the requested key is
+    # parsed).
+    llm = _FixedFakeProvider({"consistent": [True, False, True, True]})
+    ctx = EvaluationContext(
+        subject=_audio_cls_frame(), task_type=TaskType.AUDIO_CLASSIFICATION, sample_rows=4
+    )
+    prov = provider_for(TaskType.AUDIO_CLASSIFICATION)
+    assert prov is not None
+    score = await prov.score(
+        ctx,
+        llm,  # type: ignore[arg-type]
+        model_cfg,
+        selected=frozenset({"transcript_label_consistency"}),
+    )
+    assert score.metrics["transcript_label_consistency"] == pytest.approx(0.75)
+    assert len(llm.calls) == 1
+
+    # Only transcript_quality selected -> exactly one call, payload need not carry
+    # "consistent".
+    llm2 = _FixedFakeProvider({"transcript_quality": 4})
+    score2 = await prov.score(
+        ctx,
+        llm2,  # type: ignore[arg-type]
+        model_cfg,
+        selected=frozenset({"transcript_quality"}),
+    )
+    assert score2.metrics["transcript_quality"] == pytest.approx(0.8)
+    assert len(llm2.calls) == 1
 
 
 async def test_audio_classification_provider_catalog() -> None:
@@ -381,6 +416,33 @@ async def test_video_provider_skips_llm_when_not_selected(model_cfg: ModelConfig
         "fps_consistency",
         "prompt_diversity",
     }
+
+
+async def test_video_provider_resolution_consistency_deterministic_tie_break(
+    model_cfg: ModelConfig,
+) -> None:
+    # Two distinct (width, height) pairs each appear twice -> a count tie. The
+    # deterministic tie-break picks the smallest pair by tuple sort order --
+    # (1280, 720) < (1920, 1080) -- so resolution_consistency is the fraction of rows
+    # equal to (1280, 720): 2/4 = 0.5. This must not depend on pandas' internal
+    # `value_counts()` tie order.
+    df = pd.DataFrame(
+        {
+            "prompt": ["p1", "p2", "p3", "p4"],
+            "width": [1920, 1920, 1280, 1280],
+            "height": [1080, 1080, 720, 720],
+        }
+    )
+    ctx = EvaluationContext(subject=df, task_type=TaskType.TEXT_TO_VIDEO, sample_rows=4)
+    prov = provider_for(TaskType.TEXT_TO_VIDEO)
+    assert prov is not None
+    score = await prov.score(
+        ctx,
+        _ExplodingProvider(),  # type: ignore[arg-type]
+        model_cfg,
+        selected=frozenset({"resolution_consistency"}),
+    )
+    assert score.metrics["resolution_consistency"] == pytest.approx(0.5)
 
 
 async def test_video_provider_missing_resolution_columns_raises(model_cfg: ModelConfig) -> None:

@@ -46,23 +46,42 @@ _IMAGE_CONSISTENCY_SYSTEM = (
     "No prose outside the JSON."
 )
 
-_AUDIO_CONSISTENCY_SYSTEM = (
-    "You are checking whether a spoken-audio transcript plausibly matches its stated "
-    "label, using only the transcript text (no audio is available to you). For each "
-    "numbered item below, decide whether the transcript is plausibly consistent with "
-    'the label. Return ONLY JSON: {"consistent": [<bool for item 1>, ...]} -- an array '
-    "with exactly one boolean per item, in the same order as the items below. No "
-    "prose outside the JSON."
-)
 
-_AUDIO_QUALITY_SYSTEM = (
-    "You are rating a batch of speech-synthesis transcripts for text quality, using "
-    "only the transcript text (no audio is available to you). Considering all "
-    "transcripts below together as a single batch, rate ONE criterion, an INTEGER "
-    "from 1 (poor) to 5 (excellent): transcript_quality (transcripts are well-formed, "
-    'natural, and suitable to be read aloud). Return ONLY JSON: {"transcript_quality": '
-    "int}. No prose outside the JSON."
-)
+def _audio_oracle_system(*, need_consistency: bool, need_quality: bool) -> str:
+    """System prompt for the single combined audio LLM-oracle call. `consistency`
+    and `quality` are folded into one call/response when both are selected (mirroring
+    `summarization.py`'s single-call multi-criteria rubric); the prompt/schema only
+    mentions whichever criterion is actually requested, so a quality-only call (e.g.
+    `SpeechSynthesisProvider`, whose manifests carry no `label`) never asks the model
+    for a `consistent` judgment it has no label to ground."""
+    parts = [
+        "You are grading a batch of spoken-audio transcripts, using only the "
+        "transcript text (no audio is available to you)."
+    ]
+    schema_fields: list[str] = []
+    if need_consistency:
+        parts.append(
+            "For each numbered item below, decide whether the transcript is plausibly "
+            "consistent with its stated label."
+        )
+        schema_fields.append('"consistent": [<bool for item 1>, ...]')
+    if need_quality:
+        parts.append(
+            "Considering all transcripts below together as a single batch, also rate "
+            "ONE criterion, an INTEGER from 1 (poor) to 5 (excellent): transcript_quality "
+            "(transcripts are well-formed, natural, and suitable to be read aloud)."
+        )
+        schema_fields.append('"transcript_quality": int')
+    schema = "{" + ", ".join(schema_fields) + "}"
+    tail = f"Return ONLY JSON: {schema}"
+    if need_consistency:
+        tail += (
+            " -- the array has exactly one boolean per item, in the same order as the items below"
+        )
+    tail += ". No prose outside the JSON."
+    parts.append(tail)
+    return " ".join(parts)
+
 
 _VIDEO_QUALITY_SYSTEM = (
     "You are rating a batch of text-to-video generation prompts for prompt quality, "
@@ -115,12 +134,19 @@ def _modal_fraction(series: pd.Series) -> float:
 
 
 def _resolution_consistency(df: pd.DataFrame) -> float:
-    """Fraction of rows whose `(width, height)` pair equals the modal pair."""
+    """Fraction of rows whose `(width, height)` pair equals the modal pair. On a count
+    tie, the modal pair is the smallest by tuple sort order -- the same deterministic,
+    smallest-value tie-break `_modal_fraction` gets for free from `Series.mode()`, but
+    computed directly here (rather than via `Series.value_counts()`, whose tie order is
+    implementation-dependent) since the system is deterministic-by-contract."""
     if len(df) == 0:
         return 0.0
     pairs = list(zip(df["width"], df["height"], strict=True))
-    counts = pd.Series(pairs).value_counts()
-    modal = counts.index[0]
+    counts: dict[tuple[object, object], int] = {}
+    for p in pairs:
+        counts[p] = counts.get(p, 0) + 1
+    max_count = max(counts.values())
+    modal = min(p for p, c in counts.items() if c == max_count)
     return sum(1 for p in pairs if p == modal) / len(pairs)
 
 
@@ -368,12 +394,20 @@ class _AudioBase:
             metrics["label_balance"] = normalized_label_entropy(df["label"])
         if "duration_uniformity" in selected:
             metrics["duration_uniformity"] = _median_band_fraction(df)
-        if "transcript_label_consistency" in selected:
-            metrics["transcript_label_consistency"] = await self._consistency_oracle(
-                ctx, provider, model_config
+        need_consistency = "transcript_label_consistency" in selected
+        need_quality = "transcript_quality" in selected
+        if need_consistency or need_quality:
+            consistency, quality = await self._oracle(
+                ctx,
+                provider,
+                model_config,
+                need_consistency=need_consistency,
+                need_quality=need_quality,
             )
-        if "transcript_quality" in selected:
-            metrics["transcript_quality"] = await self._quality_oracle(ctx, provider, model_config)
+            if need_consistency:
+                metrics["transcript_label_consistency"] = consistency
+            if need_quality:
+                metrics["transcript_quality"] = quality
 
         score = mean_contribution(metrics, selected)
         recs: list[str] = []
@@ -397,50 +431,54 @@ class _AudioBase:
             recommendations=recs,
         )
 
-    async def _consistency_oracle(
-        self, ctx: EvaluationContext, provider: LLMProvider, model_config: ModelConfig
-    ) -> float:
+    async def _oracle(
+        self,
+        ctx: EvaluationContext,
+        provider: LLMProvider,
+        model_config: ModelConfig,
+        *,
+        need_consistency: bool,
+        need_quality: bool,
+    ) -> tuple[float, float]:
+        """Single combined LLM call for `transcript_label_consistency` and
+        `transcript_quality` -- one `complete()` call regardless of whether one or
+        both are selected, parsing only the key(s) the caller asked for (the other
+        key may be absent from the model's response)."""
         sample = sample_frame(ctx)
         if sample.empty:
-            return 0.0
+            return 0.0, 0.0
         texts = sample["text"].astype(str).tolist()
-        labels = sample["label"].astype(str).tolist()
-        lines = [
-            f"{i}. Transcript: {t}\nLabel: {lab}"
-            for i, (t, lab) in enumerate(zip(texts, labels, strict=True), start=1)
-        ]
+        if need_consistency:
+            labels = sample["label"].astype(str).tolist()
+            lines = [
+                f"{i}. Transcript: {t}\nLabel: {lab}"
+                for i, (t, lab) in enumerate(zip(texts, labels, strict=True), start=1)
+            ]
+        else:
+            lines = [f"{i}. {t}" for i, t in enumerate(texts, start=1)]
         req = LLMRequest(
             model_config_id=model_config.id,
             messages=[
-                Message(role="system", content=_AUDIO_CONSISTENCY_SYSTEM),
+                Message(
+                    role="system",
+                    content=_audio_oracle_system(
+                        need_consistency=need_consistency, need_quality=need_quality
+                    ),
+                ),
                 Message(role="user", content="\n\n".join(lines)),
             ],
             # Deterministic scoring: temperature=0 so the same sample yields reproducible judgments.
             params={"temperature": 0},
         )
         resp = await provider.complete(model_config, req)
-        consistent = _parse_consistent(resp.content, expected=len(texts))
-        return sum(consistent) / len(consistent)
-
-    async def _quality_oracle(
-        self, ctx: EvaluationContext, provider: LLMProvider, model_config: ModelConfig
-    ) -> float:
-        sample = sample_frame(ctx)
-        if sample.empty:
-            return 0.0
-        texts = sample["text"].astype(str).tolist()
-        lines = [f"{i}. {t}" for i, t in enumerate(texts, start=1)]
-        req = LLMRequest(
-            model_config_id=model_config.id,
-            messages=[
-                Message(role="system", content=_AUDIO_QUALITY_SYSTEM),
-                Message(role="user", content="\n".join(lines)),
-            ],
-            # Deterministic scoring: temperature=0 so the same sample yields a reproducible verdict.
-            params={"temperature": 0},
-        )
-        resp = await provider.complete(model_config, req)
-        return _parse_single_rubric(resp.content, "transcript_quality")
+        consistency = 0.0
+        quality = 0.0
+        if need_consistency:
+            consistent = _parse_consistent(resp.content, expected=len(texts))
+            consistency = sum(consistent) / len(consistent)
+        if need_quality:
+            quality = _parse_single_rubric(resp.content, "transcript_quality")
+        return consistency, quality
 
 
 class AudioClassificationProvider(_AudioBase):

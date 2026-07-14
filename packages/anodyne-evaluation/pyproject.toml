@@ -11,6 +11,7 @@ dependencies = [
     "anodyne-dataset",
     "anodyne-storage",
     "anodyne-tabular",
+    "anodyne-text",
     "anodyne-llm",
     # anodyne-graph supplies the GraphDataset artifact the graph judges (GD) score.
     "anodyne-graph",
@@ -33,5 +34,6 @@ anodyne-core = { workspace = true }
 anodyne-dataset = { workspace = true }
 anodyne-storage = { workspace = true }
 anodyne-tabular = { workspace = true }
+anodyne-text = { workspace = true }
 anodyne-llm = { workspace = true }
 anodyne-graph = { workspace = true }

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import html
 
-from anodyne_evaluation.models import EvaluationReport
+from anodyne_evaluation.models import EvalDimension, EvaluationReport, ExpertScore
 
 _CSS = """
 :root { --cream:#fbf6ee; --ink:#3f3a34; --amber:#d9a05b; --terracotta:#c1666b;
@@ -52,9 +52,25 @@ def _bar(score: float) -> str:
     return f'<div class="bar"><span style="width:{pct:.1f}%"></span></div>'
 
 
+def _task_metrics_block(task_score: ExpertScore | None) -> str:
+    if task_score is None:
+        return ""
+    rows = "".join(
+        f"<tr><td>{html.escape(k)}</td><td>{v:.3f}</td></tr>" for k, v in task_score.metrics.items()
+    )
+    return (
+        '<div class="card"><div class="dim">Standard task metrics</div>'
+        f'<div class="rationale">{html.escape(task_score.rationale)}</div>'
+        f'<div class="metrics"><table>{rows}</table></div></div>'
+    )
+
+
 def render_html(report: EvaluationReport) -> str:
     cards = []
+    task_score: ExpertScore | None = None
     for s in sorted(report.expert_scores, key=lambda x: str(x.dimension)):
+        if s.dimension == EvalDimension.TASK_QUALITY:
+            task_score = s
         metrics_rows = "".join(
             f"<tr><td>{html.escape(k)}</td><td>{v:.4f}</td></tr>" for k, v in s.metrics.items()
         )
@@ -65,6 +81,7 @@ def render_html(report: EvaluationReport) -> str:
             f'<div class="rationale">{html.escape(s.rationale)}</div>'
             f'<div class="metrics"><table>{metrics_rows}</table></div></div>'
         )
+    task_block = _task_metrics_block(task_score)
     recs = "".join(f"<li>{html.escape(r)}</li>" for r in report.recommendations)
     recs_block = f'<div class="recs"><h2>Recommendations</h2><ul>{recs}</ul></div>' if recs else ""
     ref = (
@@ -82,5 +99,5 @@ def render_html(report: EvaluationReport) -> str:
         f'<div class="overall"><div class="score-big">{report.overall_score * 100:.0f}'
         '<span style="font-size:1.2rem">/100</span></div>'
         f'<div class="summary">{html.escape(report.summary)}</div></div>'
-        f'<div class="grid">{"".join(cards)}</div>{recs_block}</div></body></html>'
+        f'<div class="grid">{"".join(cards)}</div>{task_block}{recs_block}</div></body></html>'
     )

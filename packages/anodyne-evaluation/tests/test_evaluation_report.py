@@ -51,3 +51,22 @@ def test_render_html_is_self_contained() -> None:
     # Fully self-contained: no external network references.
     for token in ("http://", "https://", "src=", "<link", "<script"):
         assert token not in html
+
+
+def test_render_html_renders_standard_task_metrics() -> None:
+    report = _report()
+    report.expert_scores.append(
+        ExpertScore(
+            dimension=EvalDimension.TASK_QUALITY,
+            score=0.9,
+            rationale="binary classification task",
+            metrics={"accuracy": 0.9, "macro_f1": 0.88},
+        )
+    )
+    html = render_html(report)
+    assert "Standard task metrics" in html
+    assert "binary classification task" in html
+    assert "accuracy" in html
+    assert "macro_f1" in html
+    assert "0.900" in html
+    assert "0.880" in html

@@ -11,12 +11,13 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from anodyne_dataset.models import Modality
 
 from anodyne_evaluation.models import EvalDimension, EvaluationReport, EvaluationRun, ExpertScore
+from anodyne_evaluation.task import TaskType
 
 if TYPE_CHECKING:
     import pandas as pd  # type: ignore[import-untyped]
@@ -56,6 +57,13 @@ class EvaluationContext:
     sample_rows: int = 20
     seed: int = 0
     metadata: dict[str, str] = field(default_factory=dict)
+    # Task-class inputs (sub-system F standard metrics): which task's metric
+    # provider to run, which of its metrics were selected, and (for GRAPH_QA)
+    # the loaded fixture items -- kept as `Any` here to avoid a ports->graph
+    # import cycle (the graph judges import `GraphDataset` under TYPE_CHECKING only).
+    task_type: TaskType | None = None
+    selected_metrics: frozenset[str] | None = None
+    graph_qa_items: list[Any] | None = None
 
 
 class Judge(ABC):

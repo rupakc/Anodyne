@@ -97,6 +97,9 @@ class EvaluationConfig(BaseModel):
     model_config_id: UUID | None = None  # which registered LLM drives the qualitative judge
     sample_rows: int = 20  # rows sampled for the qualitative rubric prompt
     seed: int = 0
+    task_type: str | None = None  # TaskType value driving the TaskMetricProvider selection
+    selected_metrics: list[str] | None = None  # subset of the provider's metrics to run
+    graph_qa_fixture_uri: str | None = None  # object-store key of the GRAPH_QA items fixture
 
 
 class EvaluationReport(BaseModel):

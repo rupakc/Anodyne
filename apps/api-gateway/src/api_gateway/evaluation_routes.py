@@ -13,14 +13,21 @@ from __future__ import annotations
 import json
 from uuid import UUID, uuid4
 
+# Import for its side effect: populates the `task_metrics` provider registry
+# (catalog_for/provider_for) with every task-type provider, so the
+# task-metrics catalog route and the evaluation workflow both see the full
+# set regardless of which module happened to import them first.
+import anodyne_evaluation.judges.task_metrics  # noqa: F401
 from anodyne_core.models import TenantContext
 from anodyne_core.ports import ObjectStore
 from anodyne_dataset.ports import DatasetRepository
 from anodyne_evaluation.models import EvaluationRun
 from anodyne_evaluation.ports import EvaluationRepository
+from anodyne_evaluation.task import TaskType, detect_task
+from anodyne_evaluation.task_metrics import catalog_for
 from anodyne_workflows.evaluation_workflow import EvaluationInput, EvaluationWorkflow
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from temporalio.client import Client
 
 from api_gateway import deps
@@ -37,6 +44,16 @@ class EvaluateRequest(BaseModel):
     model_config_id: UUID | None = None
     sample_rows: int = 20
     weights: dict[str, float] = {}
+    selected_metrics: list[str] | None = None
+    task_type: str | None = None
+
+    @field_validator("task_type")
+    @classmethod
+    def _validate_task_type(cls, v: str | None) -> str | None:
+        if v is not None and v not in set(TaskType):
+            valid = [t.value for t in TaskType]
+            raise ValueError(f"invalid task_type {v!r}; expected one of {valid}")
+        return v
 
 
 def _build_config(body: EvaluateRequest) -> dict[str, object]:
@@ -53,6 +70,10 @@ def _build_config(body: EvaluateRequest) -> dict[str, object]:
         cfg["text_column"] = body.text_column
     if body.model_config_id is not None:
         cfg["model_config_id"] = str(body.model_config_id)
+    if body.selected_metrics is not None:
+        cfg["selected_metrics"] = body.selected_metrics
+    if body.task_type is not None:
+        cfg["task_type"] = body.task_type
     return cfg
 
 
@@ -117,6 +138,26 @@ def build_router() -> APIRouter:
         run.workflow_id = handle.id
         await eval_repo.create_run(run)
         return run.model_dump(mode="json")
+
+    @router.get("/datasets/{dataset_id}/versions/{version_id}/task-metrics")
+    async def get_task_metrics(
+        dataset_id: UUID,
+        version_id: UUID,
+        ctx: TenantContext = Depends(deps.require("evaluations:read")),
+        repo: DatasetRepository = Depends(deps.get_dataset_repo),
+    ) -> dict[str, object]:
+        version = await repo.get_version(ctx.tenant_id, version_id)
+        if version is None or version.dataset_id != dataset_id:
+            raise HTTPException(404, "dataset version not found")
+        spec = await repo.get_spec(ctx.tenant_id, dataset_id)
+        if spec is None:
+            raise HTTPException(404, "dataset spec not found")
+        columns = [f.name for f in spec.fields]
+        task_type = detect_task(spec.modality, columns)
+        return {
+            "task_type": task_type.value,
+            "available_metrics": [m.model_dump(mode="json") for m in catalog_for(task_type)],
+        }
 
     @router.get("/evaluations/{run_id}")
     async def get_evaluation(

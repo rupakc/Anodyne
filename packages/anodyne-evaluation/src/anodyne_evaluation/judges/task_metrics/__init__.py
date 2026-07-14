@@ -7,6 +7,9 @@ import time, so callers only need `import anodyne_evaluation.judges.task_metrics
 from __future__ import annotations
 
 from anodyne_evaluation.judges.task_metrics import (
+    chat,  # noqa: F401
     generic,  # noqa: F401
+    qa,  # noqa: F401
+    summarization,  # noqa: F401
     text_classification,  # noqa: F401
 )

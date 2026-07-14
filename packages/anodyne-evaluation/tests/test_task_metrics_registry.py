@@ -9,9 +9,10 @@ def test_task_quality_dimension_has_weight() -> None:
 
 
 def test_unregistered_task_has_no_provider() -> None:
-    # No providers are registered yet -- the generic provider lands in Task 4.
-    assert provider_for(TaskType.QA) is None
-    assert catalog_for(TaskType.QA) == []
+    # tabular_classification's provider is a later task; text_classification/qa/
+    # summarization/chat/generic are registered by this point.
+    assert provider_for(TaskType.TABULAR_CLASSIFICATION) is None
+    assert catalog_for(TaskType.TABULAR_CLASSIFICATION) == []
 
 
 def test_metric_spec_shape() -> None:

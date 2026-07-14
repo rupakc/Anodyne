@@ -224,3 +224,76 @@ def test_regression_skew_health_matches_hand_computation() -> None:
     in the fixture data or pandas' skew implementation surfaces here explicitly."""
     assert _EXPECTED_SKEW == pytest.approx(2.4409670373119305)
     assert _EXPECTED_HEALTH == pytest.approx(0.7559032962688069)
+
+
+async def test_regression_target_distribution_health_nan_skew_is_healthy(
+    model_cfg: ModelConfig,
+) -> None:
+    """A constant target with only 2 samples gives pandas `.skew()` == NaN (with
+    >=3 constant values pandas' skew is well-defined and 0.0; at n=2 the
+    denominator degenerates and pandas returns NaN). The `pd.isna(skew)` guard in
+    `_target_distribution_health` must treat that NaN as zero skew, i.e. perfect
+    (1.0) distribution health."""
+    df = pd.DataFrame({"feature": [1, 2], "target": [5, 5]})
+    assert pd.isna(df["target"].skew())
+    ctx = EvaluationContext(
+        subject=df, task_type=TaskType.REGRESSION, target_field="target", sample_rows=2
+    )
+    prov = provider_for(TaskType.REGRESSION)
+    assert prov is not None
+    score = await prov.score(
+        ctx,
+        _ExplodingProvider(),  # type: ignore[arg-type]
+        model_cfg,
+        selected=frozenset({"target_distribution_health"}),
+    )
+    assert score.metrics["target_distribution_health"] == 1.0
+
+
+# --- Classification LLM parse errors --------------------------------------
+
+
+class _BadContentProvider:
+    """Fake `LLMProvider` returning a fixed, deliberately-malformed content string."""
+
+    def __init__(self, content: str) -> None:
+        self._content = content
+        self.last_request: LLMRequest | None = None
+
+    async def complete(self, config, request):  # type: ignore[no-untyped-def]
+        self.last_request = request
+        return LLMResponse(content=self._content, usage=Usage(total_tokens=1))
+
+    def stream(self, config, request): ...  # type: ignore[no-untyped-def]
+
+
+async def test_tabular_classification_provider_llm_parse_errors(
+    model_cfg: ModelConfig,
+) -> None:
+    ctx = EvaluationContext(
+        subject=_cls_frame(),
+        task_type=TaskType.TABULAR_CLASSIFICATION,
+        target_field="target",
+        sample_rows=4,
+    )
+    prov = provider_for(TaskType.TABULAR_CLASSIFICATION)
+    assert prov is not None
+
+    # (a) unparseable JSON.
+    with pytest.raises(TaskMetricError):
+        await prov.score(
+            ctx,
+            _BadContentProvider("not json"),  # type: ignore[arg-type]
+            model_cfg,
+            selected=frozenset({"label_consistency"}),
+        )
+
+    # (b) "consistent" array whose length doesn't match the 4-row sample.
+    mismatched = json.dumps({"consistent": [True, False]})
+    with pytest.raises(TaskMetricError):
+        await prov.score(
+            ctx,
+            _BadContentProvider(mismatched),  # type: ignore[arg-type]
+            model_cfg,
+            selected=frozenset({"label_consistency"}),
+        )

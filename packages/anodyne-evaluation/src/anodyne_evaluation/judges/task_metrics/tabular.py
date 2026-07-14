@@ -21,6 +21,7 @@ from anodyne_core.ports import LLMProvider
 from anodyne_evaluation.judges.task_metrics.base import (
     TaskMetricError,
     mean_contribution,
+    normalized_label_entropy,
     sample_frame,
     strip_json,
 )
@@ -134,14 +135,7 @@ class TabularClassificationProvider:
 
     @staticmethod
     def _class_balance(df: pd.DataFrame, target_field: str) -> float:
-        counts = df[target_field].value_counts()
-        k = counts.shape[0]
-        if k < 2:
-            return 0.0
-        total = counts.sum()
-        probs = [c / total for c in counts if c > 0]
-        h = -sum(p * math.log(p) for p in probs)
-        return float(h / math.log(k))
+        return normalized_label_entropy(df[target_field])
 
     async def _llm_oracle(
         self,

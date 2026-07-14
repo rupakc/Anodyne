@@ -10,7 +10,9 @@ module added in later tasks follows one pattern.
 
 from __future__ import annotations
 
+import math
 import re
+from collections.abc import Iterable
 
 import pandas as pd  # type: ignore[import-untyped]
 
@@ -63,3 +65,20 @@ def is_nonempty(x: object) -> bool:
     except (TypeError, ValueError):
         pass
     return str(x).strip() != ""
+
+
+def normalized_label_entropy(labels: pd.Series | Iterable) -> float:  # type: ignore[type-arg]
+    """Normalized Shannon entropy (H / log(k)) of a label distribution.
+
+    `1.0` for a perfectly uniform distribution, `0.0` when fewer than 2 distinct
+    labels are present. Shared by every `class_balance`/`label_balance` metric
+    across task-metric providers -- do not fork this per-provider.
+    """
+    counts = pd.Series(labels).value_counts()
+    k = counts.shape[0]
+    if k < 2:
+        return 0.0
+    total = counts.sum()
+    probs = [c / total for c in counts if c > 0]
+    h = -sum(p * math.log(p) for p in probs)
+    return float(h / math.log(k))

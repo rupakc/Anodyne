@@ -11,7 +11,6 @@ predictions to the stored labels.
 from __future__ import annotations
 
 import json
-import math
 
 import pandas as pd  # type: ignore[import-untyped]
 from anodyne_core.models import LLMRequest, Message, ModelConfig
@@ -20,6 +19,7 @@ from anodyne_core.ports import LLMProvider
 from anodyne_evaluation.judges.task_metrics.base import (
     TaskMetricError,
     mean_contribution,
+    normalized_label_entropy,
     sample_frame,
     strip_json,
 )
@@ -120,14 +120,7 @@ class TextClassificationProvider:
 
     @staticmethod
     def _class_balance(df: pd.DataFrame) -> float:
-        counts = df["label"].value_counts()
-        k = counts.shape[0]
-        if k < 2:
-            return 0.0
-        total = counts.sum()
-        probs = [c / total for c in counts if c > 0]
-        h = -sum(p * math.log(p) for p in probs)
-        return float(h / math.log(k))
+        return normalized_label_entropy(df["label"])
 
     @staticmethod
     def _duplicate_rate(df: pd.DataFrame) -> float:

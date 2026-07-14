@@ -32,6 +32,7 @@ export function baseMockApi(overrides: Partial<ApiClient> = {}): ApiClient {
     perturb: vi.fn(),
     getPerturbationJob: vi.fn(),
     listPerturbationJobs: vi.fn(),
+    fetchTaskMetrics: vi.fn(),
     evaluate: vi.fn(),
     getEvaluation: vi.fn(),
     getEvaluationReport: vi.fn(),

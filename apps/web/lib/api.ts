@@ -378,6 +378,22 @@ export interface EvaluateInput {
   model_config_id?: string;
   sample_rows?: number;
   weights?: Record<string, number>;
+  /** Keys from `TaskMetricsCatalog.available_metrics` to include; omit to run the full default set. */
+  selected_metrics?: string[];
+}
+
+/** One standard metric offered for a dataset version's detected task class (`GET .../task-metrics`). */
+export interface MetricSpec {
+  key: string;
+  label: string;
+  description: string;
+  requires_llm: boolean;
+}
+
+/** The per-task standard-metrics catalog for a dataset version. */
+export interface TaskMetricsCatalog {
+  task_type: string;
+  available_metrics: MetricSpec[];
 }
 
 export interface EvaluationRun {
@@ -597,6 +613,8 @@ export interface ApiClient {
   listPerturbationJobs(datasetId: string): Promise<PerturbationJob[]>;
 
   // --- evaluation ---
+  /** Fetches the detected task class + standard-metric catalog for a version (`GET .../task-metrics`). */
+  fetchTaskMetrics(datasetId: string, versionId: string): Promise<TaskMetricsCatalog>;
   evaluate(datasetId: string, versionId: string, input: EvaluateInput): Promise<EvaluationRun>;
   getEvaluation(id: string): Promise<EvaluationRun>;
   getEvaluationReport(id: string): Promise<EvaluationReport>;
@@ -787,6 +805,8 @@ export function createApiClient(accessToken: string | undefined, baseUrl: string
     listPerturbationJobs: (datasetId) =>
       request<PerturbationJob[]>(`/datasets/${datasetId}/perturbation-jobs`),
 
+    fetchTaskMetrics: (datasetId, versionId) =>
+      request<TaskMetricsCatalog>(`/datasets/${datasetId}/versions/${versionId}/task-metrics`),
     evaluate: (datasetId, versionId, input) =>
       request<EvaluationRun>(`/datasets/${datasetId}/versions/${versionId}/evaluate`, {
         method: "POST",

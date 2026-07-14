@@ -22,20 +22,23 @@ from anodyne_core.ports import LLMProvider, ObjectStore
 from anodyne_dataset.models import DatasetVersion, Modality
 from anodyne_dataset.ports import DatasetRepository
 from anodyne_evaluation.evaluator import MoEEvaluator, judges_for_modality, sequential_runner
-from anodyne_evaluation.loader import load_artifact, load_graph
+from anodyne_evaluation.loader import load_artifact, load_graph, load_graphrag_qa, load_manifest
 from anodyne_evaluation.models import EvaluationConfig, EvaluationRun, EvaluationStatus
 from anodyne_evaluation.ports import EvaluationContext, EvaluationRepository, JudgeRunner
 from anodyne_evaluation.registry import (
     SqlEvaluationRepository,  # noqa: F401  (re-exported for wiring)
 )
 from anodyne_evaluation.report import render_html, render_json
+from anodyne_evaluation.task import TaskType, detect_task
 from anodyne_storage.objectstore import S3ObjectStore
+from pandas.api.types import is_numeric_dtype  # type: ignore[import-untyped]
 from temporalio import activity
 
 from anodyne_workflows.evaluation_workflow import EvaluationInput
 
 if TYPE_CHECKING:
     from anodyne_dataset.models import DatasetSpec
+    from anodyne_graph.graphrag.models import GraphQAItem
 
 
 class ModelRegistryLike(Protocol):
@@ -113,7 +116,10 @@ async def run_evaluation(inp: EvaluationInput) -> str:
 
     # Graph versions are node-link JSON (not columnar): load them into a
     # `GraphDataset` for the graph judges and leave `subject` an empty frame.
-    # Every other modality keeps the DataFrame path.
+    # Media versions (image/audio/video) are a manifest JSON of item records
+    # (not raw pixels/waveform/frame bytes): load them into a records DataFrame
+    # via `load_manifest`. Every other modality (tabular/text) keeps the
+    # columnar `load_artifact` path.
     subject: pd.DataFrame = pd.DataFrame()
     reference: pd.DataFrame | None = None
     subject_graph = None
@@ -123,11 +129,38 @@ async def run_evaluation(inp: EvaluationInput) -> str:
         if ref_id is not None:
             ref_version = await _load_version(ctx, tenant_id, dataset_id, ref_id)
             reference_graph = load_graph(await store.get(ref_version.artifact_uri))
+    elif modality in (Modality.IMAGE, Modality.AUDIO, Modality.VIDEO):
+        subject = load_manifest(await store.get(version.artifact_uri))
+        if ref_id is not None:
+            ref_version = await _load_version(ctx, tenant_id, dataset_id, ref_id)
+            reference = load_manifest(await store.get(ref_version.artifact_uri))
     else:
         subject = load_artifact(await store.get(version.artifact_uri), version.format)
         if ref_id is not None:
             ref_version = await _load_version(ctx, tenant_id, dataset_id, ref_id)
             reference = load_artifact(await store.get(ref_version.artifact_uri), ref_version.format)
+
+    # Task-class resolution (sub-system F standard metrics): explicit
+    # `cfg.task_type` wins, else infer from modality + the loaded columns (+
+    # whether the tabular target is numeric, to pick regression vs.
+    # classification).
+    columns = list(subject.columns)
+    target_is_numeric = (
+        cfg.target_field is not None
+        and cfg.target_field in subject.columns
+        and is_numeric_dtype(subject[cfg.target_field])
+    )
+    task_type = (
+        TaskType(cfg.task_type)
+        if cfg.task_type
+        else detect_task(
+            modality, columns, target_field=cfg.target_field, target_is_numeric=target_is_numeric
+        )
+    )
+
+    graph_qa_items: list[GraphQAItem] | None = None
+    if cfg.graph_qa_fixture_uri:
+        graph_qa_items = load_graphrag_qa(await store.get(cfg.graph_qa_fixture_uri))
 
     eval_ctx = EvaluationContext(
         subject=subject,
@@ -141,6 +174,9 @@ async def run_evaluation(inp: EvaluationInput) -> str:
         metadata={"description": spec.description if spec else ""},
         subject_graph=subject_graph,
         reference_graph=reference_graph,
+        task_type=task_type,
+        selected_metrics=frozenset(cfg.selected_metrics) if cfg.selected_metrics else None,
+        graph_qa_items=graph_qa_items,
     )
 
     provider, model_cfg = await _resolve_llm(ctx, tenant_id, cfg)

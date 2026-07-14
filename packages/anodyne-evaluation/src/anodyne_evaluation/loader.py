@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 import pandas as pd  # type: ignore[import-untyped]
 
 if TYPE_CHECKING:
+    from anodyne_graph.graphrag.models import GraphQAItem
     from anodyne_graph.models import GraphDataset
 
 
@@ -53,3 +54,17 @@ def load_manifest(data: bytes) -> pd.DataFrame:
     doc = json.loads(data.decode("utf-8"))
     items = doc["items"] if isinstance(doc, dict) else doc
     return pd.DataFrame.from_records(items or [])
+
+
+def load_graphrag_qa(data: bytes) -> list[GraphQAItem]:
+    """Parse a GraphRAG QA fixture's bytes into `GraphQAItem`s.
+
+    Accepts either ``{"items": [...]}`` or a bare ``[...]`` list of item objects,
+    mirroring `load_manifest`'s acceptance. Imported lazily (like `load_graph`)
+    to keep this module's base import cheap.
+    """
+    from anodyne_graph.graphrag.models import GraphQAItem
+
+    doc = json.loads(data.decode("utf-8"))
+    items = doc["items"] if isinstance(doc, dict) else doc
+    return [GraphQAItem.model_validate(item) for item in (items or [])]

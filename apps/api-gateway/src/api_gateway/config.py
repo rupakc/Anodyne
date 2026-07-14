@@ -4,7 +4,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="ANODYNE_", env_file=".env")
+    # `extra="ignore"`: a shared `.env` (see scripts/setup-local-secrets.sh) also
+    # carries vars for sibling services (AWS_* for boto3, LLM keys, worker-only
+    # settings). The dotenv source would otherwise reject those as extra_forbidden
+    # and crash startup; each service simply ignores keys that aren't its fields.
+    model_config = SettingsConfigDict(env_prefix="ANODYNE_", env_file=".env", extra="ignore")
     # Non-superuser runtime role (`anodyne_app`), NOT the `postgres` migration
     # superuser — see .env.example and docs/dev-runbook.md. Superusers bypass
     # row-level security even with FORCE ROW LEVEL SECURITY, so the app must

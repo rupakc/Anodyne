@@ -4,7 +4,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="ANODYNE_", env_file=".env")
+    # `extra="ignore"`: tolerate a shared `.env` that also holds sibling-service
+    # vars (AWS_* for boto3, LLM keys) — the dotenv source would otherwise reject
+    # unmapped keys as extra_forbidden and crash startup.
+    model_config = SettingsConfigDict(env_prefix="ANODYNE_", env_file=".env", extra="ignore")
 
     temporal_address: str = "localhost:7233"
     # Ray client address. Defaults to the `ray-head` container from `make up`

@@ -11,5 +11,6 @@ from anodyne_evaluation.judges.task_metrics import (
     generic,  # noqa: F401
     qa,  # noqa: F401
     summarization,  # noqa: F401
+    tabular,  # noqa: F401
     text_classification,  # noqa: F401
 )

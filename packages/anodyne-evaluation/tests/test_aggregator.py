@@ -22,11 +22,11 @@ def _agg(scores: list[ExpertScore]) -> EvaluationReport:
 
 
 def test_weighted_mean_with_default_weights() -> None:
-    # fidelity 0.25 * 1.0 + privacy 0.20 * 0.0 over present weight 0.45.
+    # fidelity 0.22 * 1.0 + privacy 0.17 * 0.0 over present weight 0.39.
     report = _agg([_score(EvalDimension.FIDELITY, 1.0), _score(EvalDimension.PRIVACY, 0.0)])
-    assert report.overall_score == pytest.approx((0.25 * 1.0 + 0.20 * 0.0) / 0.45)
+    assert report.overall_score == pytest.approx((0.22 * 1.0 + 0.17 * 0.0) / 0.39)
     # Weights are renormalized over present dimensions and sum to 1.
-    assert report.weights["fidelity"] == pytest.approx(0.25 / 0.45)
+    assert report.weights["fidelity"] == pytest.approx(0.22 / 0.39)
     assert sum(report.weights.values()) == pytest.approx(1.0)
 
 

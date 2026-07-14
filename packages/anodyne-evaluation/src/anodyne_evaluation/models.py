@@ -39,6 +39,10 @@ class EvalDimension(StrEnum):
     GRAPH_CONNECTIVITY = "graph_connectivity"
     GRAPH_UTILITY = "graph_utility"
     GRAPH_PRIVACY = "graph_privacy"
+    # Task-quality expert (sub-system F): per-`TaskType` standard metrics, scored
+    # by whichever `TaskMetricProvider` is registered for the run's task (see
+    # `task_metrics.py`). Present in every modality's weight group.
+    TASK_QUALITY = "task_quality"
 
 
 # Default 360-degree weights, grouped by modality. Each modality's group sums to
@@ -46,22 +50,31 @@ class EvalDimension(StrEnum):
 # produced a score, so mixing never happens in practice (a run is single-modality).
 # Overridable per run via `EvaluationConfig.weights`.
 TABULAR_WEIGHTS: dict[str, float] = {
-    EvalDimension.FIDELITY: 0.25,
-    EvalDimension.PRIVACY: 0.20,
-    EvalDimension.UTILITY: 0.20,
-    EvalDimension.DIVERSITY: 0.15,
-    EvalDimension.QUALITATIVE: 0.10,
-    EvalDimension.BIAS: 0.10,
+    EvalDimension.FIDELITY: 0.22,
+    EvalDimension.PRIVACY: 0.17,
+    EvalDimension.UTILITY: 0.17,
+    EvalDimension.DIVERSITY: 0.12,
+    EvalDimension.QUALITATIVE: 0.08,
+    EvalDimension.BIAS: 0.09,
+    EvalDimension.TASK_QUALITY: 0.15,
 }
 GRAPH_WEIGHTS: dict[str, float] = {
-    EvalDimension.GRAPH_STRUCTURE: 0.25,
-    EvalDimension.GRAPH_ONTOLOGY: 0.20,
-    EvalDimension.GRAPH_PRIVACY: 0.15,
-    EvalDimension.GRAPH_CONNECTIVITY: 0.15,
-    EvalDimension.GRAPH_UTILITY: 0.15,
-    EvalDimension.GRAPH_SEMANTIC: 0.10,
+    EvalDimension.GRAPH_STRUCTURE: 0.22,
+    EvalDimension.GRAPH_ONTOLOGY: 0.18,
+    EvalDimension.GRAPH_PRIVACY: 0.13,
+    EvalDimension.GRAPH_CONNECTIVITY: 0.13,
+    EvalDimension.GRAPH_UTILITY: 0.13,
+    EvalDimension.GRAPH_SEMANTIC: 0.08,
+    EvalDimension.TASK_QUALITY: 0.13,
 }
-DEFAULT_WEIGHTS: dict[str, float] = {**TABULAR_WEIGHTS, **GRAPH_WEIGHTS}
+# Media modalities (image/audio/video) have no bespoke statistical experts yet;
+# the mixture is task-quality (standard per-task metrics) plus the qualitative
+# LLM judge.
+MEDIA_WEIGHTS: dict[str, float] = {
+    EvalDimension.TASK_QUALITY: 0.7,
+    EvalDimension.QUALITATIVE: 0.3,
+}
+DEFAULT_WEIGHTS: dict[str, float] = {**TABULAR_WEIGHTS, **GRAPH_WEIGHTS, **MEDIA_WEIGHTS}
 
 
 class ExpertScore(BaseModel):

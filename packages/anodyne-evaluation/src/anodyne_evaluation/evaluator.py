@@ -16,6 +16,7 @@ from anodyne_core.models import ModelConfig
 from anodyne_core.ports import LLMProvider
 from anodyne_dataset.models import Modality
 
+import anodyne_evaluation.judges.task_metrics  # noqa: F401  (registers providers)
 from anodyne_evaluation.aggregator import WeightedAggregator
 from anodyne_evaluation.graph_judges import (
     ConnectivityCoverageGraphJudge,
@@ -33,6 +34,7 @@ from anodyne_evaluation.judges import (
     QualitativeJudge,
     UtilityJudge,
 )
+from anodyne_evaluation.judges.task_metrics.judge import TaskMetricsJudge
 from anodyne_evaluation.models import EvaluationReport, ExpertScore
 from anodyne_evaluation.ports import (
     Aggregator,
@@ -68,6 +70,7 @@ def default_judges(
     ]
     if provider is not None and model_config is not None:
         judges.append(QualitativeJudge(provider, model_config))
+        judges.append(TaskMetricsJudge(provider, model_config))
     return judges
 
 
@@ -85,6 +88,21 @@ def graph_judges(
     ]
     if provider is not None and model_config is not None:
         judges.append(SemanticPlausibilityGraphJudge(provider, model_config))
+        judges.append(TaskMetricsJudge(provider, model_config))
+    return judges
+
+
+def media_judges(
+    provider: LLMProvider | None = None, model_config: ModelConfig | None = None
+) -> list[Judge]:
+    """The media (image/audio/video) mixture: LLM-backed judges only. There is
+    no statistical-distribution baseline for raw media, so unlike
+    `default_judges`/`graph_judges` this mixture is empty without an
+    `LLMProvider` + `ModelConfig`."""
+    judges: list[Judge] = []
+    if provider is not None and model_config is not None:
+        judges.append(QualitativeJudge(provider, model_config))
+        judges.append(TaskMetricsJudge(provider, model_config))
     return judges
 
 
@@ -94,11 +112,15 @@ def judges_for_modality(
     model_config: ModelConfig | None = None,
 ) -> list[Judge]:
     """Select the expert mixture for `modality`: the graph judges for
-    `Modality.GRAPH`, else the tabular/text judges. This is the dispatch seam the
-    evaluation activity uses so a graph run scores graph dimensions and every
-    other modality keeps its existing experts."""
+    `Modality.GRAPH`, the LLM-only media mixture for `Modality.IMAGE`/`AUDIO`/
+    `VIDEO`, else the tabular/text judges. This is the dispatch seam the
+    evaluation activity uses so a graph run scores graph dimensions, a media
+    run scores only the judges that can actually operate on raw media, and
+    every other modality keeps its existing experts."""
     if modality == Modality.GRAPH:
         return graph_judges(provider, model_config)
+    if modality in (Modality.IMAGE, Modality.AUDIO, Modality.VIDEO):
+        return media_judges(provider, model_config)
     return default_judges(provider, model_config)
 
 

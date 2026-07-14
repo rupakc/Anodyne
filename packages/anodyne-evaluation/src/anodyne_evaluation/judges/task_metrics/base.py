@@ -39,3 +39,27 @@ def sample_frame(ctx: EvaluationContext) -> pd.DataFrame:
 def mean_contribution(metrics: dict[str, float], selected: frozenset[str]) -> float:
     vals = [metrics[k] for k in metrics if k in selected]
     return sum(vals) / len(vals) if vals else 0.0
+
+
+def text_value(x: object) -> str:
+    """Coerce a row value to a string, treating `None`/NaN as `""`."""
+    if x is None:
+        return ""
+    try:
+        if pd.isna(x):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(x)
+
+
+def is_nonempty(x: object) -> bool:
+    """`True` iff `x` is not `None`/NaN and its stripped string form is non-empty."""
+    if x is None:
+        return False
+    try:
+        if pd.isna(x):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return str(x).strip() != ""

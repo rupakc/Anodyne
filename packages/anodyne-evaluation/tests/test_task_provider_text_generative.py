@@ -62,6 +62,20 @@ class _FakeQAProvider:
     def stream(self, config, request): ...  # type: ignore[no-untyped-def]
 
 
+class _BadContentProvider:
+    """Fake `LLMProvider` returning a fixed, deliberately-malformed content string."""
+
+    def __init__(self, content: str) -> None:
+        self._content = content
+        self.last_request: LLMRequest | None = None
+
+    async def complete(self, config, request):  # type: ignore[no-untyped-def]
+        self.last_request = request
+        return LLMResponse(content=self._content, usage=Usage(total_tokens=1))
+
+    def stream(self, config, request): ...  # type: ignore[no-untyped-def]
+
+
 def _qa_frame() -> pd.DataFrame:
     return pd.DataFrame({"question": _QA_QUESTIONS, "answer": _QA_ANSWERS, "context": _QA_CONTEXTS})
 
@@ -121,6 +135,31 @@ async def test_qa_provider_missing_answer_column_raises(model_cfg: ModelConfig) 
             _FakeQAProvider(),  # type: ignore[arg-type]
             model_cfg,
             selected=frozenset({"answerable_rate"}),
+        )
+
+
+async def test_qa_provider_llm_parse_errors(model_cfg: ModelConfig) -> None:
+    ctx = EvaluationContext(subject=_qa_frame(), task_type=TaskType.QA, sample_rows=3)
+    prov = provider_for(TaskType.QA)
+    assert prov is not None
+
+    # (a) unparseable JSON.
+    with pytest.raises(TaskMetricError):
+        await prov.score(
+            ctx,
+            _BadContentProvider("not json"),  # type: ignore[arg-type]
+            model_cfg,
+            selected=frozenset({"answer_correctness", "groundedness"}),
+        )
+
+    # (b) correct/grounded arrays whose length doesn't match the 3-row sample.
+    mismatched = json.dumps({"correct": [True, False], "grounded": [True, False]})
+    with pytest.raises(TaskMetricError):
+        await prov.score(
+            ctx,
+            _BadContentProvider(mismatched),  # type: ignore[arg-type]
+            model_cfg,
+            selected=frozenset({"answer_correctness", "groundedness"}),
         )
 
 
@@ -228,6 +267,34 @@ async def test_summarization_provider_missing_summary_column_raises(
         )
 
 
+async def test_summarization_provider_llm_parse_errors(model_cfg: ModelConfig) -> None:
+    ctx = EvaluationContext(
+        subject=_summarization_frame(), task_type=TaskType.SUMMARIZATION, sample_rows=2
+    )
+    prov = provider_for(TaskType.SUMMARIZATION)
+    assert prov is not None
+
+    # (a) unparseable JSON.
+    with pytest.raises(TaskMetricError):
+        await prov.score(
+            ctx,
+            _BadContentProvider("not json"),  # type: ignore[arg-type]
+            model_cfg,
+            selected=frozenset({"faithfulness", "coverage", "conciseness"}),
+        )
+
+    # (b) each rubric value is a per-item score array (of mismatched length) rather
+    # than the single batch integer 1-5 the parser requires.
+    mismatched = json.dumps({"faithfulness": [4, 4, 4], "coverage": [5, 5, 5], "conciseness": [4]})
+    with pytest.raises(TaskMetricError):
+        await prov.score(
+            ctx,
+            _BadContentProvider(mismatched),  # type: ignore[arg-type]
+            model_cfg,
+            selected=frozenset({"faithfulness", "coverage", "conciseness"}),
+        )
+
+
 # ---------------------------------------------------------------------------
 # Chat
 # ---------------------------------------------------------------------------
@@ -322,4 +389,30 @@ async def test_chat_provider_missing_response_column_raises(model_cfg: ModelConf
             _FakeChatProvider(),  # type: ignore[arg-type]
             model_cfg,
             selected=frozenset({"turn_validity"}),
+        )
+
+
+async def test_chat_provider_llm_parse_errors(model_cfg: ModelConfig) -> None:
+    ctx = EvaluationContext(subject=_chat_frame(), task_type=TaskType.CHAT, sample_rows=3)
+    prov = provider_for(TaskType.CHAT)
+    assert prov is not None
+
+    # (a) unparseable JSON.
+    with pytest.raises(TaskMetricError):
+        await prov.score(
+            ctx,
+            _BadContentProvider("not json"),  # type: ignore[arg-type]
+            model_cfg,
+            selected=frozenset({"instruction_following", "coherence"}),
+        )
+
+    # (b) each rubric value is a per-item score array (of mismatched length) rather
+    # than the single batch integer 1-5 the parser requires.
+    mismatched = json.dumps({"instruction_following": [5, 4], "coherence": [4, 4, 4]})
+    with pytest.raises(TaskMetricError):
+        await prov.score(
+            ctx,
+            _BadContentProvider(mismatched),  # type: ignore[arg-type]
+            model_cfg,
+            selected=frozenset({"instruction_following", "coherence"}),
         )

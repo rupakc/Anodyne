@@ -69,7 +69,16 @@ async def test_provider_task_metric_error_is_not_applicable(model_cfg: ModelConf
         await judge.evaluate(ctx)
 
 
-async def test_unregistered_task_type_is_not_applicable(model_cfg: ModelConfig) -> None:
+async def test_unregistered_task_type_is_not_applicable(
+    model_cfg: ModelConfig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Simulate a task type with no registered provider by forcing the `provider_for`
+    # lookup `judge.py` uses to return None, rather than depending on some real
+    # TaskType happening to be unregistered (a premise that breaks once every
+    # TaskType has a provider).
+    import anodyne_evaluation.judges.task_metrics.judge as judge_module
+
+    monkeypatch.setattr(judge_module, "provider_for", lambda task: None)
     llm = _FakeProvider("{}")
     ctx = EvaluationContext(subject=pd.DataFrame({"a": [1]}), task_type=TaskType.QA)
     judge = TaskMetricsJudge(llm, model_cfg)  # type: ignore[arg-type]

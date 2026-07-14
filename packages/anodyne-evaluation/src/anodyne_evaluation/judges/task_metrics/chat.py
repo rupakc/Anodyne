@@ -17,6 +17,7 @@ from anodyne_core.ports import LLMProvider
 
 from anodyne_evaluation.judges.task_metrics.base import (
     TaskMetricError,
+    is_nonempty,
     mean_contribution,
     sample_frame,
     strip_json,
@@ -36,17 +37,6 @@ _ORACLE_SYSTEM = (
 )
 
 _RUBRIC_KEYS = ("instruction_following", "coherence")
-
-
-def _is_nonempty(x: object) -> bool:
-    if x is None:
-        return False
-    try:
-        if pd.isna(x):
-            return False
-    except (TypeError, ValueError):
-        pass
-    return str(x).strip() != ""
 
 
 class ChatProvider:
@@ -121,7 +111,7 @@ class ChatProvider:
         valid = sum(
             1
             for instr, resp in zip(df["instruction"], df["response"], strict=True)
-            if _is_nonempty(instr) and _is_nonempty(resp)
+            if is_nonempty(instr) and is_nonempty(resp)
         )
         return valid / len(df)
 

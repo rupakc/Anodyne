@@ -24,6 +24,7 @@ from anodyne_evaluation.judges.task_metrics.base import (
     mean_contribution,
     sample_frame,
     strip_json,
+    text_value,
 )
 from anodyne_evaluation.models import EvalDimension, ExpertScore
 from anodyne_evaluation.ports import EvaluationContext
@@ -42,17 +43,6 @@ _ORACLE_SYSTEM = (
 
 _RUBRIC_KEYS = ("faithfulness", "coverage", "conciseness")
 _TOKEN_RE = re.compile(r"\w+")
-
-
-def _text(x: object) -> str:
-    if x is None:
-        return ""
-    try:
-        if pd.isna(x):
-            return ""
-    except (TypeError, ValueError):
-        pass
-    return str(x)
 
 
 def _bigrams(text: str) -> set[tuple[str, str]]:
@@ -151,10 +141,10 @@ class SummarizationProvider:
     def _compression_ratio(df: pd.DataFrame) -> float:
         ratios: list[float] = []
         for doc, summ in zip(df["document"], df["summary"], strict=True):
-            doc_s = _text(doc)
+            doc_s = text_value(doc)
             if len(doc_s) == 0:
                 continue
-            ratios.append(min(1.0, len(_text(summ)) / len(doc_s)))
+            ratios.append(min(1.0, len(text_value(summ)) / len(doc_s)))
         return sum(ratios) / len(ratios) if ratios else 0.0
 
     @staticmethod
@@ -162,7 +152,7 @@ class SummarizationProvider:
         if len(df) == 0:
             return 0.0
         overlaps = [
-            _bigram_overlap(_text(summ), _text(doc))
+            _bigram_overlap(text_value(summ), text_value(doc))
             for doc, summ in zip(df["document"], df["summary"], strict=True)
         ]
         mean_overlap = sum(overlaps) / len(overlaps)

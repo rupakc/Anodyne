@@ -22,6 +22,7 @@ from anodyne_core.ports import LLMProvider
 
 from anodyne_evaluation.judges.task_metrics.base import (
     TaskMetricError,
+    is_nonempty,
     mean_contribution,
     sample_frame,
     strip_json,
@@ -43,17 +44,6 @@ _ORACLE_SYSTEM = (
 
 _INTERROGATIVES = {"what", "why", "how", "when", "where", "who", "which"}
 _WORD_RE = re.compile(r"[a-zA-Z]+")
-
-
-def _is_nonempty(x: object) -> bool:
-    if x is None:
-        return False
-    try:
-        if pd.isna(x):
-            return False
-    except (TypeError, ValueError):
-        pass
-    return str(x).strip() != ""
 
 
 def _question_type(question: object) -> str:
@@ -149,7 +139,7 @@ class QAProvider:
     def _answerable_rate(df: pd.DataFrame) -> float:
         if len(df) == 0:
             return 0.0
-        return sum(1 for a in df["answer"] if _is_nonempty(a)) / len(df)
+        return sum(1 for a in df["answer"] if is_nonempty(a)) / len(df)
 
     @staticmethod
     def _question_type_diversity(df: pd.DataFrame) -> float:

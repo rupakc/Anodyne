@@ -9,6 +9,11 @@ import pandas as pd  # type: ignore[import-untyped]
 import pytest
 from anodyne_core.models import LLMRequest, LLMResponse, ModelConfig, Usage
 from anodyne_evaluation.judges.task_metrics.base import TaskMetricError
+from anodyne_evaluation.judges.task_metrics.graph_qa import (
+    _build_indices,
+    _multi_hop_correctness,
+    _sample_questions,
+)
 from anodyne_evaluation.ports import EvaluationContext
 from anodyne_evaluation.task import TaskType
 from anodyne_evaluation.task_metrics import provider_for
@@ -175,3 +180,112 @@ async def test_graph_qa_provider_llm_parse_errors(model_cfg: ModelConfig) -> Non
             model_cfg,
             selected=frozenset({"question_clarity"}),
         )
+
+
+# --- _sample_questions: seeded, reproducible subset selection ---------------
+
+
+def _items_with_questions(n: int) -> list[GraphQAItem]:
+    return [
+        GraphQAItem(
+            question=f"q{i}",
+            answer="a",
+            answer_node_ids=["n1"],
+            gold_path=QAPath(hops=[], terminal_node_id="n1"),
+            hop_count=0,
+            question_type="multi_hop",
+            difficulty="easy",
+        )
+        for i in range(n)
+    ]
+
+
+def test_sample_questions_seeded_reproducible_and_sized() -> None:
+    items = _items_with_questions(5)
+    ctx = _ctx(graph_qa_items=items, sample_rows=3, seed=42)
+
+    first = _sample_questions(items, ctx)
+    second = _sample_questions(items, ctx)
+
+    # Same seed -> identical subset (order included), and the pinned selection
+    # random.Random(42).sample(range(5), k=3) actually produces.
+    assert first == second == ["q0", "q4", "q2"]
+    assert len(first) == min(ctx.sample_rows, len(items))
+
+
+def test_sample_questions_different_seed_differs() -> None:
+    items = _items_with_questions(5)
+    ctx_a = _ctx(graph_qa_items=items, sample_rows=3, seed=42)
+    ctx_b = _ctx(graph_qa_items=items, sample_rows=3, seed=7)
+
+    assert _sample_questions(items, ctx_a) != _sample_questions(items, ctx_b)
+
+
+def test_sample_questions_caps_at_available_items() -> None:
+    items = _items_with_questions(2)
+    ctx = _ctx(graph_qa_items=items, sample_rows=20, seed=0)
+
+    result = _sample_questions(items, ctx)
+
+    assert len(result) == min(ctx.sample_rows, len(items)) == 2
+    assert set(result) == {"q0", "q1"}
+
+
+# --- _path_retraverses / _other_end: undirected + broken-traversal coverage -
+
+
+def _linear_graph() -> GraphDataset:
+    """n1 --e1(source=n1,target=n2)-- n2, matching `_graph()` above."""
+    return _graph()
+
+
+def test_multi_hop_correctness_target_side_hop_is_correct() -> None:
+    """Edge e1 is stored as source=n1, target=n2, but the gold path's hop
+    starts at n2 and crosses e1 back to n1 -- i.e. the path traverses the edge
+    from its `target` side. `_other_end` must resolve n2 -> n1 by falling
+    through to the `edge.target == node_id` branch, not just `edge.source`."""
+    graph = _linear_graph()
+    _, edges_by_id = _build_indices(graph)
+    item = GraphQAItem(
+        question="How is n2 connected to n1?",
+        answer="via e1",
+        answer_node_ids=["n1"],
+        gold_path=QAPath(hops=[("n2", "e1")], terminal_node_id="n1"),
+        hop_count=1,
+        question_type="multi_hop",
+        difficulty="easy",
+    )
+    assert _multi_hop_correctness([item], edges_by_id) == pytest.approx(1.0)
+
+
+def test_multi_hop_correctness_missing_edge_id_counts_incorrect_no_raise() -> None:
+    graph = _linear_graph()
+    _, edges_by_id = _build_indices(graph)
+    item = GraphQAItem(
+        question="What connects n1 to n3 via a ghost edge?",
+        answer="unknown",
+        answer_node_ids=[],
+        gold_path=QAPath(hops=[("n1", "e_missing")], terminal_node_id="n2"),
+        hop_count=1,
+        question_type="multi_hop",
+        difficulty="easy",
+    )
+    assert _multi_hop_correctness([item], edges_by_id) == pytest.approx(0.0)
+
+
+def test_multi_hop_correctness_disconnected_hop_counts_incorrect_no_raise() -> None:
+    """The hop names e2 (a real edge, n2--n3) but claims to start the walk from
+    n1 -- e2 doesn't touch n1 on either end, so `_other_end` returns `None` and
+    the walk fails without raising."""
+    graph = _linear_graph()
+    _, edges_by_id = _build_indices(graph)
+    item = GraphQAItem(
+        question="Does e2 connect n1 to n3?",
+        answer="no",
+        answer_node_ids=[],
+        gold_path=QAPath(hops=[("n1", "e2")], terminal_node_id="n3"),
+        hop_count=1,
+        question_type="multi_hop",
+        difficulty="easy",
+    )
+    assert _multi_hop_correctness([item], edges_by_id) == pytest.approx(0.0)

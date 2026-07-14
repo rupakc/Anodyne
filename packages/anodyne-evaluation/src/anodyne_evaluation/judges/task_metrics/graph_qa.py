@@ -18,6 +18,7 @@ declares as `source`/`target`.
 from __future__ import annotations
 
 import json
+import random
 from typing import TYPE_CHECKING
 
 from anodyne_core.models import LLMRequest, Message, ModelConfig
@@ -125,11 +126,14 @@ def _answer_groundedness(items: list[GraphQAItem], node_ids: set[str]) -> float:
 
 
 def _sample_questions(items: list[GraphQAItem], ctx: EvaluationContext) -> list[str]:
+    """Seeded random subset of question surface forms, mirroring `base.py`'s
+    `sample_frame` convention (`ctx.subject.sample(random_state=ctx.seed)`):
+    same seed -> same subset, different seeds -> (likely) different subsets."""
     n = min(ctx.sample_rows, len(items))
     if n <= 0:
         return []
-    ordered = sorted(range(len(items)), key=lambda i: items[i].question)
-    return [items[i].question for i in ordered[:n]]
+    chosen = random.Random(ctx.seed).sample(range(len(items)), k=n)
+    return [items[i].question for i in chosen]
 
 
 def _parse_question_clarity(raw: str) -> float:

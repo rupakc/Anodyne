@@ -57,6 +57,27 @@ async def test_generic_provider_catalog_has_three_llm_metrics() -> None:
     assert all(m.requires_llm for m in catalog)
 
 
+async def test_generic_provider_subset_metric_selection(model_cfg: ModelConfig) -> None:
+    """Verify that only selected metrics contribute to the final score."""
+    llm = _FakeProvider(json.dumps({"realism": 5, "coherence": 1, "task_fit": 1, "rationale": "x"}))
+    ctx = EvaluationContext(subject=pd.DataFrame({"a": [1, 2]}), task_type=TaskType.GENERIC)
+    prov = provider_for(TaskType.GENERIC)
+    assert prov is not None
+    score = await prov.score(
+        ctx,
+        llm,  # type: ignore[arg-type]
+        model_cfg,
+        selected=frozenset({"realism"}),
+    )
+    # Only realism (5/5.0 = 1.0) is selected, so the score should be 1.0
+    assert score.score == pytest.approx(1.0)
+    # But metrics should still contain all three computed values
+    assert set(score.metrics) >= {"realism", "coherence", "task_fit"}
+    assert score.metrics["realism"] == pytest.approx(1.0)
+    assert score.metrics["coherence"] == pytest.approx(0.2)
+    assert score.metrics["task_fit"] == pytest.approx(0.2)
+
+
 async def test_generic_provider_unparseable_output_raises(model_cfg: ModelConfig) -> None:
     from anodyne_evaluation.judges.task_metrics.base import TaskMetricError
 

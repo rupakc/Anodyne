@@ -20,6 +20,7 @@ from uuid import UUID, uuid4
 import anodyne_evaluation.judges.task_metrics  # noqa: F401
 from anodyne_core.models import TenantContext
 from anodyne_core.ports import ObjectStore
+from anodyne_dataset.models import SemanticType
 from anodyne_dataset.ports import DatasetRepository
 from anodyne_evaluation.models import EvaluationRun
 from anodyne_evaluation.ports import EvaluationRepository
@@ -143,6 +144,7 @@ def build_router() -> APIRouter:
     async def get_task_metrics(
         dataset_id: UUID,
         version_id: UUID,
+        target_field: str | None = Query(None),
         ctx: TenantContext = Depends(deps.require("evaluations:read")),
         repo: DatasetRepository = Depends(deps.get_dataset_repo),
     ) -> dict[str, object]:
@@ -153,7 +155,19 @@ def build_router() -> APIRouter:
         if spec is None:
             raise HTTPException(404, "dataset spec not found")
         columns = [f.name for f in spec.fields]
-        task_type = detect_task(spec.modality, columns)
+        # Mirror the tabular target-numeric check the evaluation activity does
+        # (`evaluation_activities.run_evaluation`) so the catalog shown here
+        # matches the task class the workflow will actually evaluate --
+        # otherwise a UI-launched run can post metric keys from the wrong
+        # catalog and the judge silently drops them (empty intersection).
+        target_spec = next((f for f in spec.fields if f.name == target_field), None)
+        target_is_numeric = target_spec is not None and target_spec.semantic_type in (
+            SemanticType.INTEGER,
+            SemanticType.FLOAT,
+        )
+        task_type = detect_task(
+            spec.modality, columns, target_field=target_field, target_is_numeric=target_is_numeric
+        )
         return {
             "task_type": task_type.value,
             "available_metrics": [m.model_dump(mode="json") for m in catalog_for(task_type)],

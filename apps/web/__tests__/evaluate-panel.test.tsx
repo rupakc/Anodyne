@@ -89,6 +89,42 @@ describe("EvaluatePanel — standard metrics", () => {
     expect(input.selected_metrics).toEqual(["accuracy", "macro_f1"]);
   });
 
+  it("refetches the task-metrics catalog with the target field once one is selected", async () => {
+    const user = userEvent.setup();
+    const TABULAR_CATALOG: TaskMetricsCatalog = {
+      task_type: "tabular_classification",
+      available_metrics: [
+        { key: "f1", label: "F1", description: "F1 score.", requires_llm: false },
+      ],
+    };
+    const fetchTaskMetrics = vi
+      .fn()
+      .mockResolvedValueOnce(CATALOG)
+      .mockResolvedValueOnce(TABULAR_CATALOG);
+    const api = baseMockApi({ fetchTaskMetrics });
+
+    render(
+      <EvaluatePanel
+        api={api}
+        datasetId="d-1"
+        versionId="v-1"
+        otherVersions={[]}
+        fieldNames={["churned"]}
+      />,
+    );
+
+    // Initial fetch (no target selected yet) is called with just the 2 args.
+    await waitFor(() => expect(fetchTaskMetrics).toHaveBeenNthCalledWith(1, "d-1", "v-1"));
+    await screen.findByText("Text classification");
+
+    await user.selectOptions(screen.getByLabelText(/target field/i), "churned");
+
+    await waitFor(() =>
+      expect(fetchTaskMetrics).toHaveBeenNthCalledWith(2, "d-1", "v-1", "churned"),
+    );
+    expect(await screen.findByText("Tabular classification")).toBeInTheDocument();
+  });
+
   it("hides the panel gracefully when available_metrics is empty", async () => {
     const api = baseMockApi({
       fetchTaskMetrics: vi.fn().mockResolvedValue({ task_type: "generic", available_metrics: [] }),

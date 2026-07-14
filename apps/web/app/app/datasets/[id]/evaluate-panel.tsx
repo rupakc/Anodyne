@@ -43,14 +43,23 @@ export function EvaluatePanel({
   // catalogs (including a fetch failure) hide the panel entirely — the
   // evaluation still launches fine, just with the gateway's full default set.
   const [taskMetrics, setTaskMetrics] = useState<TaskMetricsCatalog | null>(null);
+  // The target field the current `taskMetrics` catalog was fetched for. Used
+  // to detect a stale catalog below (previous target's result still in state
+  // while the refetch for a newly-changed target is in flight) without
+  // calling setState synchronously in the effect body.
+  const [taskMetricsTarget, setTaskMetricsTarget] = useState("");
   const [selectedMetrics, setSelectedMetrics] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
-    api.fetchTaskMetrics(datasetId, versionId).then(
+    const fetchPromise = targetField
+      ? api.fetchTaskMetrics(datasetId, versionId, targetField)
+      : api.fetchTaskMetrics(datasetId, versionId);
+    fetchPromise.then(
       (catalog) => {
         if (cancelled) return;
         setTaskMetrics(catalog);
+        setTaskMetricsTarget(targetField);
         setSelectedMetrics(new Set(catalog.available_metrics.map((m) => m.key)));
       },
       () => {
@@ -58,6 +67,7 @@ export function EvaluatePanel({
         // — degrade gracefully, never block launching the evaluation.
         if (!cancelled) {
           setTaskMetrics(null);
+          setTaskMetricsTarget(targetField);
           setSelectedMetrics(new Set());
         }
       },
@@ -65,9 +75,13 @@ export function EvaluatePanel({
     return () => {
       cancelled = true;
     };
-  }, [api, datasetId, versionId]);
+  }, [api, datasetId, versionId, targetField]);
 
-  const availableMetrics = taskMetrics?.available_metrics ?? [];
+  // While a refetch triggered by a target-field change is in flight, the
+  // catalog in state still belongs to the previous target — treat it as
+  // absent so a stale catalog/selection is never shown or submitted.
+  const catalogIsStale = taskMetricsTarget !== targetField;
+  const availableMetrics = catalogIsStale ? [] : (taskMetrics?.available_metrics ?? []);
 
   function toggleMetric(key: string) {
     setSelectedMetrics((prev) => {

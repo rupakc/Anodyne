@@ -613,8 +613,19 @@ export interface ApiClient {
   listPerturbationJobs(datasetId: string): Promise<PerturbationJob[]>;
 
   // --- evaluation ---
-  /** Fetches the detected task class + standard-metric catalog for a version (`GET .../task-metrics`). */
-  fetchTaskMetrics(datasetId: string, versionId: string): Promise<TaskMetricsCatalog>;
+  /**
+   * Fetches the detected task class + standard-metric catalog for a version
+   * (`GET .../task-metrics`). Pass `targetField` when the caller has one
+   * selected (e.g. before launching a tabular evaluation) so the catalog
+   * matches the task class the evaluation workflow will actually resolve
+   * (`tabular_classification`/`regression` instead of the target-blind
+   * `generic` fallback).
+   */
+  fetchTaskMetrics(
+    datasetId: string,
+    versionId: string,
+    targetField?: string,
+  ): Promise<TaskMetricsCatalog>;
   evaluate(datasetId: string, versionId: string, input: EvaluateInput): Promise<EvaluationRun>;
   getEvaluation(id: string): Promise<EvaluationRun>;
   getEvaluationReport(id: string): Promise<EvaluationReport>;
@@ -805,8 +816,12 @@ export function createApiClient(accessToken: string | undefined, baseUrl: string
     listPerturbationJobs: (datasetId) =>
       request<PerturbationJob[]>(`/datasets/${datasetId}/perturbation-jobs`),
 
-    fetchTaskMetrics: (datasetId, versionId) =>
-      request<TaskMetricsCatalog>(`/datasets/${datasetId}/versions/${versionId}/task-metrics`),
+    fetchTaskMetrics: (datasetId, versionId, targetField) =>
+      request<TaskMetricsCatalog>(
+        `/datasets/${datasetId}/versions/${versionId}/task-metrics${
+          targetField ? `?target_field=${encodeURIComponent(targetField)}` : ""
+        }`,
+      ),
     evaluate: (datasetId, versionId, input) =>
       request<EvaluationRun>(`/datasets/${datasetId}/versions/${versionId}/evaluate`, {
         method: "POST",

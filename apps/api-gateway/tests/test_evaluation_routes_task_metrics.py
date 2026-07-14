@@ -89,6 +89,23 @@ def _text_spec(tenant_id: object, dataset_id: object) -> DatasetSpec:
     )
 
 
+def _tabular_spec(tenant_id: object, dataset_id: object) -> DatasetSpec:
+    return DatasetSpec(
+        id=dataset_id,  # type: ignore[arg-type]
+        tenant_id=tenant_id,  # type: ignore[arg-type]
+        name="ds",
+        description="d",
+        modality=Modality.TABULAR,
+        source="synthetic",
+        fields=[
+            FieldSpec(name="age", semantic_type=SemanticType.INTEGER),
+            FieldSpec(name="income", semantic_type=SemanticType.FLOAT),
+            FieldSpec(name="churned", semantic_type=SemanticType.CATEGORICAL),
+        ],
+        target_rows=10,
+    )
+
+
 @pytest.fixture
 def client_and_app():  # type: ignore[no-untyped-def]
     app = create_app()
@@ -120,6 +137,98 @@ async def test_task_metrics_catalog_for_text_classification(client_and_app) -> N
     assert body["available_metrics"]
     for m in body["available_metrics"]:
         assert set(["key", "label", "description", "requires_llm"]).issubset(m.keys())
+
+
+async def test_task_metrics_tabular_categorical_target_resolves_classification(  # type: ignore[no-untyped-def]
+    client_and_app,
+) -> None:
+    """A tabular spec with a categorical target + `?target_field=` must resolve to
+    `tabular_classification` and its tabular catalog -- matching what
+    `evaluation_activities.run_evaluation` resolves at evaluation time, so the
+    catalog the UI offers is never a dead-letter superset/subset of the real one.
+    """
+    client, app = client_and_app
+    ctx = _ctx(Role.VIEWER)
+    dataset_id, version_id = uuid4(), uuid4()
+    version = DatasetVersion(
+        id=version_id,
+        tenant_id=ctx.tenant_id,
+        dataset_id=dataset_id,
+        artifact_uri="a",
+        format="parquet",
+        row_count=10,
+    )
+    spec = _tabular_spec(ctx.tenant_id, dataset_id)
+    app.dependency_overrides[deps.get_tenant_context] = lambda: ctx
+    app.dependency_overrides[deps.get_dataset_repo] = lambda: _FakeDatasetRepo(
+        [version], {dataset_id: spec}
+    )
+
+    r = await client.get(
+        f"/datasets/{dataset_id}/versions/{version_id}/task-metrics?target_field=churned"
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["task_type"] == "tabular_classification"
+    assert body["available_metrics"]
+    for m in body["available_metrics"]:
+        assert set(["key", "label", "description", "requires_llm"]).issubset(m.keys())
+
+
+async def test_task_metrics_tabular_numeric_target_resolves_regression(  # type: ignore[no-untyped-def]
+    client_and_app,
+) -> None:
+    client, app = client_and_app
+    ctx = _ctx(Role.VIEWER)
+    dataset_id, version_id = uuid4(), uuid4()
+    version = DatasetVersion(
+        id=version_id,
+        tenant_id=ctx.tenant_id,
+        dataset_id=dataset_id,
+        artifact_uri="a",
+        format="parquet",
+        row_count=10,
+    )
+    spec = _tabular_spec(ctx.tenant_id, dataset_id)
+    app.dependency_overrides[deps.get_tenant_context] = lambda: ctx
+    app.dependency_overrides[deps.get_dataset_repo] = lambda: _FakeDatasetRepo(
+        [version], {dataset_id: spec}
+    )
+
+    r = await client.get(
+        f"/datasets/{dataset_id}/versions/{version_id}/task-metrics?target_field=income"
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["task_type"] == "regression"
+
+
+async def test_task_metrics_tabular_without_target_field_still_generic(  # type: ignore[no-untyped-def]
+    client_and_app,
+) -> None:
+    """Documents that the drift is closed only when `target_field` is passed --
+    omitting it (the pre-fix call shape) still falls back to `generic`, same as
+    before."""
+    client, app = client_and_app
+    ctx = _ctx(Role.VIEWER)
+    dataset_id, version_id = uuid4(), uuid4()
+    version = DatasetVersion(
+        id=version_id,
+        tenant_id=ctx.tenant_id,
+        dataset_id=dataset_id,
+        artifact_uri="a",
+        format="parquet",
+        row_count=10,
+    )
+    spec = _tabular_spec(ctx.tenant_id, dataset_id)
+    app.dependency_overrides[deps.get_tenant_context] = lambda: ctx
+    app.dependency_overrides[deps.get_dataset_repo] = lambda: _FakeDatasetRepo(
+        [version], {dataset_id: spec}
+    )
+
+    r = await client.get(f"/datasets/{dataset_id}/versions/{version_id}/task-metrics")
+    assert r.status_code == 200
+    assert r.json()["task_type"] == "generic"
 
 
 async def test_task_metrics_unknown_version_404(client_and_app) -> None:  # type: ignore[no-untyped-def]
